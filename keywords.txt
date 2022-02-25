@@ -1,0 +1,24 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+ACANFD_FeatherM4CAN_Settings	KEYWORD1
+CANMessage	KEYWORD1
+CANFDMessage	KEYWORD1
+ACANFD_FeatherM4CAN	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+beginFD	KEYWORD2
+end	KEYWORD2
+tryToSendFD	KEYWORD2
+availableFD	KEYWORD2
+receiveFD	KEYWORD2
+dispatchReceivedMessageFD	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
