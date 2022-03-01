@@ -165,7 +165,7 @@ void loop () {
   }
 //--- Receive frame
   CANFDMessage frame ;
-  if (!gSend && can0.receiveFD (frame)) {
+  if (!gSend && can0.receiveFD0 (frame)) {
     gSend = true ;
     gReceiveCount += 1 ;
     bool sameFrames = gSendFrame.id == frame.id ;

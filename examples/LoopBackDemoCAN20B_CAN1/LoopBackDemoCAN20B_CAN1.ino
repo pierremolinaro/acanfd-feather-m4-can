@@ -91,7 +91,7 @@ void loop () {
     frame.data [5] = 0x66 ;
     frame.data [6] = 0x77 ;
     frame.data [7] = 0x88 ;
-    const uint32_t sendStatus = can1.tryToSendReturnStatus (frame) ;
+    const uint32_t sendStatus = can1.tryToSendReturnStatusFD (frame) ;
     if (sendStatus == 0) {
       gSentCount += 1 ;
       Serial.print ("Sent ") ;
@@ -103,7 +103,7 @@ void loop () {
   }
 //--- Receive frame
   CANFDMessage frame ;
-  if (can1.receiveFD (frame)) {
+  if (can1.receiveFD0 (frame)) {
     gReceiveCount += 1 ;
     Serial.print ("Received ") ;
     Serial.println (gReceiveCount) ;

@@ -53,8 +53,8 @@ class ACANFD_FeatherM4CAN_Settings {
 //··································································································
 
 //--- CAN FD bit timing
-  public: uint32_t mWhishedArbitrationBitRate ; // In kb/s
-  public: DataBitRateFactor mDataBitRateFactor ;
+  public: const uint32_t mWhishedArbitrationBitRate ; // In kb/s
+  public: const DataBitRateFactor mDataBitRateFactor ;
 //--- bitrate prescaler is common to arbitration bitrate and data bitrate
   public: uint8_t mBitRatePrescaler = 32 ; // 1...32
 //--- Arbitration segments
@@ -86,36 +86,19 @@ class ACANFD_FeatherM4CAN_Settings {
 //--- Transceiver Delay Compensation
   public: uint8_t mTransceiverDelayCompensation = 5 ; // 0 ... 127
 
-//--- Driver buffer Size
-  public: uint16_t mDriverReceiveBuffer0 = 32 ;
+//--- Driver receive buffer Size
+  public: uint16_t mDriverReceiveBuffer0Size = 32 ;
 
-//   public : uint8_t mRxCANFDMBCount = 11 ; // 1 ... depends from mPayload, see documentation
+//--- Driver transmit buffer Size
+  public: uint16_t mDriverTransmitBufferSize = 32 ;
 
-//--- Listen only mode
-//   public: bool mListenOnlyMode = false ; // true --> listen only mode, cannot send any message, false --> normal mode
 
-//--- Self Reception mode
-//   public: bool mSelfReceptionMode = false ; // true --> sent frame are also received, false --> are not received
+//--- Hardware Transmit Buffers
+//    Required: mHardwareTransmitTxFIFOSize + mHardwareDedicacedTxBufferCount <= 32
+  public: uint8_t mHardwareTransmitTxFIFOSize = 24 ; // 0 ... 32
+  public: uint8_t mHardwareDedicacedTxBufferCount = 8 ; // 0 ... 32
+  public: Payload mHardwareTransmitBufferPayload = PAYLOAD_64_BYTES ;
 
-//--- Loop Back mode
-//   public: bool mLoopBackMode = false ; // true --> loop back mode, false --> no loop back
-
-// false --> Do NOT include Stuff Bit Count in CRC Field and use CRC Initialization Vector with all zeros
-// true --> Include Stuff Bit Count in CRC Field and use Non-Zero CRC Initialization Vector according to ISO 11898-1:2015
-//   public: bool mISOCRCEnabled = true ;
-
-//--- Tx pin configuration
-//   public: TxPinOutputBufferImpedance mTxPinOutputBufferImpedance = IMPEDANCE_R0_DIVIDED_BY_6 ;
-//   public: bool mTxPinIsOpenCollector = false ; // false --> totem pole, true --> open collector
-
-//--- Rx pin configuration
-//   public: RxPinConfiguration mRxPinConfiguration = PULLUP_47k ;
-
-//--- Receive buffer size
-  public: uint16_t mReceiveBufferSize = 32 ;
-
-//--- Transmit buffer size
-  public: uint16_t mTransmitBufferSize = 16 ;
 
 //··································································································
 // Accessors

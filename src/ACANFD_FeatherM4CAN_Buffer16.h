@@ -14,21 +14,13 @@ class ACANFD_FeatherM4CAN_Buffer16 {
   // Default constructor
   //································································································
 
-  public: ACANFD_FeatherM4CAN_Buffer16 (void)  :
-  mBuffer (NULL),
-  mSize (0),
-  mReadIndex (0),
-  mCount (0),
-  mPeakCount (0) {
-  }
+  public: ACANFD_FeatherM4CAN_Buffer16 (void) ;
 
   //································································································
   // Destructor
   //································································································
 
-  public: ~ ACANFD_FeatherM4CAN_Buffer16 (void) {
-    delete [] mBuffer ;
-  }
+  public: ~ ACANFD_FeatherM4CAN_Buffer16 (void) ;
 
   //································································································
   // Private properties
@@ -46,71 +38,33 @@ class ACANFD_FeatherM4CAN_Buffer16 {
 
   public: inline uint16_t size (void) const { return mSize ; }
   public: inline uint16_t count (void) const { return mCount ; }
+  public: inline bool isEmpty (void) const { return mCount == 0 ; }
+  public: inline bool isFull (void) const { return mCount == mSize ; }
   public: inline uint16_t peakCount (void) const { return mPeakCount ; }
 
   //································································································
   // initWithSize
   //································································································
 
-  public: bool initWithSize (const uint16_t inSize) {
-    delete [] mBuffer ;
-    mBuffer = new CANFDMessage [inSize] ;
-    const bool ok = mBuffer != NULL ;
-    mSize = ok ? inSize : 0 ;
-    mReadIndex = 0 ;
-    mCount = 0 ;
-    mPeakCount = 0 ;
-    return ok ;
-  }
+  public: void initWithSize (const uint16_t inSize) ;
 
   //································································································
   // append
   //································································································
 
-  public: bool append (const CANFDMessage & inMessage) {
-    const bool ok = mCount < mSize ;
-    if (ok) {
-      uint16_t writeIndex = mReadIndex + mCount ;
-      if (writeIndex >= mSize) {
-        writeIndex -= mSize ;
-      }
-      mBuffer [writeIndex] = inMessage ;
-      mCount ++ ;
-      if (mPeakCount < mCount) {
-        mPeakCount = mCount ;
-      }
-    }
-    return ok ;
-  }
+  public: bool append (const CANFDMessage & inMessage) ;
 
   //································································································
   // Remove
   //································································································
 
-  public: bool remove (CANFDMessage & outMessage) {
-    const bool ok = mCount > 0 ;
-    if (ok) {
-      outMessage = mBuffer [mReadIndex] ;
-      mCount -= 1 ;
-      mReadIndex += 1 ;
-      if (mReadIndex == mSize) {
-        mReadIndex = 0 ;
-      }
-    }
-    return ok ;
-  }
+  public: bool remove (CANFDMessage & outMessage) ;
 
   //································································································
   // Free
   //································································································
 
-  public: void free (void) {
-    delete [] mBuffer ; mBuffer = nullptr ;
-    mSize = 0 ;
-    mReadIndex = 0 ;
-    mCount = 0 ;
-    mPeakCount = 0 ;
-  }
+  public: void free (void) ;
 
   //································································································
   // Reset Peak Count

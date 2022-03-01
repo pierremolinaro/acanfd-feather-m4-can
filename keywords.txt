@@ -14,9 +14,7 @@ ACANFD_FeatherM4CAN	KEYWORD1
 beginFD	KEYWORD2
 end	KEYWORD2
 tryToSendFD	KEYWORD2
-availableFD	KEYWORD2
-receiveFD	KEYWORD2
-dispatchReceivedMessageFD	KEYWORD2
+receiveFD0	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)

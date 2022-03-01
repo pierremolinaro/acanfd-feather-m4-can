@@ -1,12 +1,4 @@
 //--------------------------------------------------------------------------------------------------
-// A Teensy 4.x CANFD driver
-// by Pierre Molinaro
-
-// This header is common to libraries
-//        https://github.com/pierremolinaro/ACAN_T4
-//        https://github.com/pierremolinaro/ACAN2517FD
-//
-//--------------------------------------------------------------------------------------------------
 
 #ifndef ACANFD_DATA_BIT_RATE_FACTOR_DEFINED
 #define ACANFD_DATA_BIT_RATE_FACTOR_DEFINED

@@ -29,8 +29,9 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   }
 //--- Configure if no error
   if (0 == errorCode) {
-  //------------------------------------------------------ Configure Drive Receive buffer 0
-    mReceiveBuffer0.initWithSize (inSettings.mDriverReceiveBuffer0) ;
+  //------------------------------------------------------ Configure Driver buffers
+    mDriverTransmitBuffer.initWithSize (inSettings.mDriverTransmitBufferSize) ;
+    mDriverReceiveBuffer0.initWithSize (inSettings.mDriverReceiveBuffer0Size) ;
   //------------------------------------------------------ Enable CAN Clock (48 MHz)
     switch (mModule) {
     case ACANFD_FeatherM4CAN_Module::can0 :
@@ -50,7 +51,7 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   //------------------------------------------------------ Enable configuration change
     mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE ;
     mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE | CAN_CCCR_TEST ;
-    uint32_t cccr  = CAN_CCCR_BRSE | CAN_CCCR_FDOE ; // | CAN_CCCR_PXHD ;
+    uint32_t cccr  = CAN_CCCR_BRSE | CAN_CCCR_FDOE ;
   //------------------------------------------------------ Select mode
     mModulePtr->TEST.reg = 0 ;
     switch (inSettings.mModuleMode) {
@@ -82,8 +83,7 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 //     Serial.println (mModulePtr->NBTP.reg, HEX) ;
   //------------------------------------------------------ Set data Bit Timing and Prescaler (page 1119)
     mModulePtr->DBTP.reg =
- //     ((inSettings.mTransceiverDelayCompensation != 0) ? CAN_DBTP_TDC : 0) // Enable Transceiver Delay Compensation ?
-       CAN_DBTP_TDC // Enable Transceiver Delay Compensation ?
+      CAN_DBTP_TDC // Enable Transceiver Delay Compensation ?
     |
       (uint32_t (inSettings.mBitRatePrescaler - 1) << 16)
     |
@@ -132,18 +132,22 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
     mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
 //     Serial.print ("RxBuffer ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
-    ptr += 18 ; // Advance for 18 words
+//    ptr += 18 ; // Advance for 18 words
   //--- Allocate Tx Event / FIFO (0 ... 32 elements -> 0 ... 64 words)
+  //       EMPTY
   //--- Allocate Tx Buffers (0 ... 32 elements -> 0 ... 576 words)
-   mModulePtr->TXESC.reg = 7 ; // Reserve memory for 64 byte data field (page 1166)
-   mTxBuffersPointer = ptr ;
-   mModulePtr->TXBC.reg = // Page 1164
+    mHardwareTxBufferPayload = inSettings.mHardwareTransmitBufferPayload ;
+    mModulePtr->TXESC.reg = uint32_t (mHardwareTxBufferPayload) ; // page 1166
+    mTxBuffersPointer = ptr ;
+    mModulePtr->TXBC.reg = // Page 1164
       (uint32_t (ptr) & 0xFFFFU) // Tx Buffer start address
+//     |
+//       (inSettings.mHardwareTransmitTxFIFOSize << 24) // Number of Transmit FIFO / Queue buffers
     |
-      (1 << 16) // Number of Transmit buffers
+      (inSettings.mHardwareDedicacedTxBufferCount << 16) // Number of Dedicaced Tx buffers
     ;
-//     Serial.print ("TxBuffer ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
-    ptr += 18 ; // Advance for 18 words
+    const uint32_t txBufferCount = inSettings.mHardwareDedicacedTxBufferCount + inSettings.mHardwareTransmitTxFIFOSize ;
+    ptr += txBufferCount * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareTxBufferPayload) ;
   //------------------------------------------------------ Display Message RAM Allocation
     Serial.print ("Message RAM start 0x") ;
     Serial.println (uint32_t (mMessageRAMPtr), HEX) ;
@@ -156,7 +160,10 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     Serial.print (minRequiredSize) ;
     Serial.println (" words") ;
   //------------------------------------------------------ Interrupts
-    mModulePtr->IE.reg = CAN_IE_RF0NE ; // Receive FIFO 0 Non Empty
+    uint32_t interruptRegister = CAN_IE_RF0NE ; // Receive FIFO 0 Non Empty
+    interruptRegister |= CAN_IE_TCE ; // Enable Transmission Completed Interrupt: page 1141
+    mModulePtr->IE.reg = interruptRegister ;
+    mModulePtr->TXBTIE.reg = ~ 0 ;
     mModulePtr->ILS.reg = 0 ; // All interrupt on EINT0
     switch (mModule) {
     case ACANFD_FeatherM4CAN_Module::can0 :
@@ -174,33 +181,33 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     case ACANFD_FeatherM4CAN_Module::can0 :
       { const uint32_t canTxPin = 22 ;
         const uint32_t canRxPin = 23 ;
-        const uint32_t GROUP = 0 ; // PA
-        PORT->Group [GROUP].DIRSET.reg = (1 << canTxPin) ;
-        PORT->Group [GROUP].DIRCLR.reg = (1 << canRxPin) ;
-        PORT->Group [GROUP].PINCFG [canTxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
-        PORT->Group [GROUP].PINCFG [canRxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
-        PORT->Group [GROUP].PMUX [canTxPin / 2].reg = PORT_PMUX_PMUXE (8) | PORT_PMUX_PMUXO (8) ;
+        const uint32_t GROUP_PA = 0 ; // PA
+        PORT->Group [GROUP_PA].DIRSET.reg = (1 << canTxPin) ;
+        PORT->Group [GROUP_PA].DIRCLR.reg = (1 << canRxPin) ;
+        PORT->Group [GROUP_PA].PINCFG [canTxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
+        PORT->Group [GROUP_PA].PINCFG [canRxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
+        PORT->Group [GROUP_PA].PMUX [canTxPin / 2].reg = PORT_PMUX_PMUXE (8) | PORT_PMUX_PMUXO (8) ;
       }
       break ;
     case ACANFD_FeatherM4CAN_Module::can1 :
       { const uint32_t canTxPin = 14 ;
         const uint32_t canRxPin = 15 ;
-        const uint32_t GROUP = 1 ; // PB
-        PORT->Group [GROUP].DIRSET.reg = (1 << canTxPin) ;
-        PORT->Group [GROUP].DIRCLR.reg = (1 << canRxPin) ;
-        PORT->Group [GROUP].PINCFG [canTxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
-        PORT->Group [GROUP].PINCFG [canRxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
-        PORT->Group [GROUP].PMUX [canTxPin / 2].reg = PORT_PMUX_PMUXE (7) | PORT_PMUX_PMUXO (7) ;
+        const uint32_t GROUP_PB = 1 ; // PB
+        PORT->Group [GROUP_PB].DIRSET.reg = (1 << canTxPin) ;
+        PORT->Group [GROUP_PB].DIRCLR.reg = (1 << canRxPin) ;
+        PORT->Group [GROUP_PB].PINCFG [canTxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
+        PORT->Group [GROUP_PB].PINCFG [canRxPin].reg = PORT_PINCFG_INEN | PORT_PINCFG_PMUXEN ;
+        PORT->Group [GROUP_PB].PMUX [canTxPin / 2].reg = PORT_PMUX_PMUXE (7) | PORT_PMUX_PMUXO (7) ;
       //--- Activate PB12, for enabling transceiver
         const uint32_t canSilentPin = 12 ;
-        PORT->Group [GROUP].DIRSET.reg = (1 << canSilentPin) ;
-        PORT->Group [GROUP].OUTCLR.reg = (1 << canSilentPin) ;
-        PORT->Group [GROUP].PINCFG [canSilentPin].reg = PORT_PINCFG_INEN ;
+        PORT->Group [GROUP_PB].DIRSET.reg = (1 << canSilentPin) ;
+        PORT->Group [GROUP_PB].OUTCLR.reg = (1 << canSilentPin) ;
+        PORT->Group [GROUP_PB].PINCFG [canSilentPin].reg = PORT_PINCFG_INEN ;
       //--- Activate PB13, for enabling BOOST_EN
         const uint32_t boostEnablePin = 13 ;
-        PORT->Group [GROUP].DIRSET.reg = (1 << boostEnablePin) ;
-        PORT->Group [GROUP].OUTSET.reg = (1 << boostEnablePin) ;
-        PORT->Group [GROUP].PINCFG [boostEnablePin].reg = PORT_PINCFG_INEN ;
+        PORT->Group [GROUP_PB].DIRSET.reg = (1 << boostEnablePin) ;
+        PORT->Group [GROUP_PB].OUTSET.reg = (1 << boostEnablePin) ;
+        PORT->Group [GROUP_PB].PINCFG [boostEnablePin].reg = PORT_PINCFG_INEN ;
       }
       break ;
     }
@@ -222,9 +229,9 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 //   RECEPTION
 //--------------------------------------------------------------------------------------------------
 
-bool ACANFD_FeatherM4CAN::receiveFD (CANFDMessage & outMessage) {
+bool ACANFD_FeatherM4CAN::receiveFD0 (CANFDMessage & outMessage) {
   noInterrupts () ;
-    const bool hasMessage = mReceiveBuffer0.remove (outMessage) ;
+    const bool hasMessage = mDriverReceiveBuffer0.remove (outMessage) ;
   interrupts () ;
   return hasMessage ;
 }
@@ -233,94 +240,116 @@ bool ACANFD_FeatherM4CAN::receiveFD (CANFDMessage & outMessage) {
 //   EMISSION
 //--------------------------------------------------------------------------------------------------
 
-uint32_t ACANFD_FeatherM4CAN::tryToSendReturnStatus (const CANMessage & inMessage) {
-  uint32_t sendStatus = 0 ;
-  const bool txBufferIsFull = (mModulePtr->TXBRP.reg & 1) != 0 ;
-  if (txBufferIsFull) {
-    sendStatus = kTransmitBufferOverflow ;
-  }else{
-    if (inMessage.ext) {
-      mTxBuffersPointer [0] = (inMessage.id & 0x1FFFFFFFU) | (1U << 30) ; // Page 1179
-    }else{
-      mTxBuffersPointer [0] = (inMessage.id & 0x7FFU) << 18 ;
+bool ACANFD_FeatherM4CAN::sendBufferNotFullForIndex (const uint32_t inMessageIndex) {
+  bool canSend = false ;
+  noInterrupts () ;
+    if (inMessageIndex == 0) { // Send via Tx FIFO ?
+      canSend = !mDriverTransmitBuffer.isFull () ;
+    }else{ // Send via dedicaced Tx Buffer ?
+      const uint32_t numberOfDedicacedTxBuffers = (mModulePtr->TXBC.reg >> 16) & 0x3F ; // Page 1164
+      if (inMessageIndex <= numberOfDedicacedTxBuffers) {
+        const uint32_t txBufferIndex = inMessageIndex - 1 ;
+        canSend = (mModulePtr->TXBRP.reg & (1U << txBufferIndex)) == 0 ; // Page 1167
+      }
     }
-    mTxBuffersPointer [0] |= uint32_t (inMessage.rtr) << 29 ;
-    const uint32_t length = min (uint32_t (inMessage.len), 8U) ;
-    mTxBuffersPointer [1] = length << 16 ;
-    mTxBuffersPointer [2] = inMessage.data32 [0] ;
-    mTxBuffersPointer [3] = inMessage.data32 [1] ;
-//    __DMB () ;
-//    Serial.print (" Buff 0x") ; Serial.println (uint32_t (&mTxBuffersPointer [0]), HEX) ;
-    mModulePtr->TXBAR.reg = 1 ; // Page 1168
-  }
-  return sendStatus ;
+  interrupts () ;
+  return canSend ;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 uint32_t ACANFD_FeatherM4CAN::tryToSendReturnStatusFD (const CANFDMessage & inMessage) {
-  uint32_t sendStatus = 0 ;
-  const bool txBufferIsFull = (mModulePtr->TXBRP.reg & 1) != 0 ;
-  if (txBufferIsFull) {
-    sendStatus = kTransmitBufferOverflow ;
-  }else{
-  //--- Identifier and extended bit
-    if (inMessage.ext) {
-      mTxBuffersPointer [0] = (inMessage.id & 0x1FFFFFFFU) | (1U << 30) ;
-    }else{
-      mTxBuffersPointer [0] = (inMessage.id & 0x7FFU) << 18 ;
-    }
-  //---Control
-    uint32_t lengthCode ;
-    if (inMessage.len > 48) {
-      lengthCode = 15 ;
-    }else if (inMessage.len > 32) {
-      lengthCode = 14 ;
-    }else if (inMessage.len > 24) {
-      lengthCode = 13 ;
-    }else if (inMessage.len > 20) {
-      lengthCode = 12 ;
-    }else if (inMessage.len > 16) {
-      lengthCode = 11 ;
-    }else if (inMessage.len > 12) {
-      lengthCode = 10 ;
-    }else if (inMessage.len > 8) {
-      lengthCode = 9 ;
-    }else{
-      lengthCode = inMessage.len ;
-    }
-    mTxBuffersPointer [1] = uint32_t (lengthCode) << 16 ;
-  //---
-    switch (inMessage.type) {
-    case CANFDMessage::CAN_REMOTE :
-      mTxBuffersPointer [0] |= 1 << 29 ; // Set RTR bit
-      break ;
-    case CANFDMessage::CAN_DATA :
-      mTxBuffersPointer [2] = inMessage.data32 [0] ;
-      mTxBuffersPointer [3] = inMessage.data32 [1] ;
-      break ;
-    case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
-      { mTxBuffersPointer [1] |= 1 << 21 ; // Set FDF bit
-        const uint32_t wc = (inMessage.len + 3) / 4 ;
-        for (uint32_t i=0 ; i<wc ; i++) {
-          mTxBuffersPointer [i+2] = inMessage.data32 [i] ;
-        }
+  noInterrupts () ;
+    uint32_t sendStatus = 0 ;
+    if (inMessage.idx == 0) { // Send via Tx FIFO ?
+      const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
+      const uint32_t hardwareTransmitFifoFreeLevel = txfqs & 0x3F ; // Page 1165
+      if ((hardwareTransmitFifoFreeLevel > 0) && mDriverTransmitBuffer.isEmpty ()) {
+        const uint32_t putIndex = (txfqs >> 16) & 0x1F ;
+        writeTxBuffer (inMessage, putIndex) ;
+      }else if (mDriverTransmitBuffer.isFull ()) {
+        sendStatus = kTransmitBufferOverflow ;
+      }else{
+        mDriverTransmitBuffer.append (inMessage) ;
       }
-      break ;
-    case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
-      { mTxBuffersPointer [1] |= (1 << 21) | (1 << 20) ; // Set FDF and BRS bits
-        const uint32_t wc = (inMessage.len + 3) / 4 ;
-        for (uint32_t i=0 ; i<wc ; i++) {
-          mTxBuffersPointer [i+2] = inMessage.data32 [i] ;
+    }else{ // Send via dedicaced Tx Buffer ?
+      const uint32_t numberOfDedicacedTxBuffers = (mModulePtr->TXBC.reg >> 16) & 0x3F ; // Page 1164
+      if (inMessage.idx <= numberOfDedicacedTxBuffers) {
+        const uint32_t txBufferIndex = inMessage.idx - 1 ;
+        const bool hardwareTxBufferIsEmpty = (mModulePtr->TXBRP.reg & (1U << txBufferIndex)) == 0 ; // Page 1167
+        if (hardwareTxBufferIsEmpty) {
+          writeTxBuffer (inMessage, txBufferIndex) ;
+        }else{
+          sendStatus = kTransmitBufferOverflow ;
         }
+      }else{
+        sendStatus = kTransmitBufferIndexTooLarge ;
       }
-      break ;
     }
-//    __DMB () ;
-  //---Request transmit
-    mModulePtr->TXBAR.reg = 1 ; // Page 1293
-  }
+  interrupts () ;
   return sendStatus ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void ACANFD_FeatherM4CAN::writeTxBuffer (const CANFDMessage & inMessage, const uint32_t inTxBufferIndex) {
+//--- Compute Tx Buffer address
+  uint32_t * txBufferPtr = mTxBuffersPointer ;
+  txBufferPtr += inTxBufferIndex * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareTxBufferPayload) ;
+//--- Identifier and extended bit
+  if (inMessage.ext) {
+    txBufferPtr [0] = (inMessage.id & 0x1FFFFFFFU) | (1U << 30) ;
+  }else{
+    txBufferPtr [0] = (inMessage.id & 0x7FFU) << 18 ;
+  }
+//---Control
+  uint32_t lengthCode ;
+  if (inMessage.len > 48) {
+    lengthCode = 15 ;
+  }else if (inMessage.len > 32) {
+    lengthCode = 14 ;
+  }else if (inMessage.len > 24) {
+    lengthCode = 13 ;
+  }else if (inMessage.len > 20) {
+    lengthCode = 12 ;
+  }else if (inMessage.len > 16) {
+    lengthCode = 11 ;
+  }else if (inMessage.len > 12) {
+    lengthCode = 10 ;
+  }else if (inMessage.len > 8) {
+    lengthCode = 9 ;
+  }else{
+    lengthCode = inMessage.len ;
+  }
+  txBufferPtr [1] = uint32_t (lengthCode) << 16 ;
+//---
+  switch (inMessage.type) {
+  case CANFDMessage::CAN_REMOTE :
+    txBufferPtr [0] |= 1 << 29 ; // Set RTR bit
+    break ;
+  case CANFDMessage::CAN_DATA :
+    txBufferPtr [2] = inMessage.data32 [0] ;
+    txBufferPtr [3] = inMessage.data32 [1] ;
+    break ;
+  case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
+    { txBufferPtr [1] |= 1 << 21 ; // Set FDF bit
+      const uint32_t wc = (inMessage.len + 3) / 4 ;
+      for (uint32_t i=0 ; i<wc ; i++) {
+        txBufferPtr [i+2] = inMessage.data32 [i] ;
+      }
+    }
+    break ;
+  case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
+    { txBufferPtr [1] |= (1 << 21) | (1 << 20) ; // Set FDF and BRS bits
+      const uint32_t wc = (inMessage.len + 3) / 4 ;
+      for (uint32_t i=0 ; i<wc ; i++) {
+        txBufferPtr [i+2] = inMessage.data32 [i] ;
+      }
+    }
+    break ;
+  }
+//---Request transmit
+  mModulePtr->TXBAR.reg = 1U << inTxBufferIndex ; // Page 1168
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -339,7 +368,7 @@ static void getMessageFrom (uint32_t * inMessageRamAddress,
     outMessage.id >>= 18 ;
   }
   const uint32_t w1 = inMessageRamAddress [1] ;
-  const uint32_t dlc = (w1 >> 16) &  0xF ;
+  const uint32_t dlc = (w1 >> 16) & 0xF ;
   static const uint8_t CANFD_LENGTH_FROM_CODE [16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64} ;
   outMessage.len = CANFD_LENGTH_FROM_CODE [dlc] ;
   const bool fdf = (w1 & (1 << 21)) != 0 ;
@@ -366,7 +395,6 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
   bool loop = true ;
   while (loop) {
     const uint32_t it = mModulePtr->IR.reg ;
-    loop = it != 0 ;
     if ((it & CAN_IR_RF0N) != 0) { // Receive FIFO 0 Non Empty
       CANFDMessage message ;
     //--- Get read index
@@ -381,7 +409,25 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
     //--- Interrupt Acknowledge
       mModulePtr->IR.reg = CAN_IR_RF0N ;
     //--- Enter message into driver receive buffer 0
-      mReceiveBuffer0.append (message) ;
+      mDriverReceiveBuffer0.append (message) ;
+    }else if ((it & CAN_IR_TC) != 0) {
+    //--- Interrupt Acknowledge
+      mModulePtr->IR.reg = CAN_IR_TC ;
+    //--- Write message into transmit fifo ?
+      bool writeMessage = true ;
+      CANFDMessage message ;
+      while (writeMessage) {
+        const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
+        const uint32_t txFifoFreeLevel = txfqs & 0x3F ;
+        if ((txFifoFreeLevel > 0) && mDriverTransmitBuffer.remove (message)) {
+          const uint32_t putIndex = (txfqs >> 16) & 0x1F ;
+          writeTxBuffer (message, putIndex) ;
+        }else{
+          writeMessage = false ;
+        }
+      }
+    }else{
+      loop = false ;
     }
   }
 }

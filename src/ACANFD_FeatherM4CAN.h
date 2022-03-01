@@ -54,27 +54,20 @@ class ACANFD_FeatherM4CAN {
 //   public: inline uint32_t transmitBufferPeakCount (void) const { return mTransmitBufferPeakCount ; }
 //
 // //--- Transmitting messages and return status (returns 0 if ok)
-   public: uint32_t tryToSendReturnStatus (const CANMessage & inMessage) ;
+//    public: uint32_t tryToSendReturnStatus (const CANMessage & inMessage) ;
+   public: bool sendBufferNotFullForIndex (const uint32_t inTxBufferIndex) ;
    public: uint32_t tryToSendReturnStatusFD (const CANFDMessage & inMessage) ;
    public: static const uint32_t kTransmitBufferOverflow = 1 << 0 ;
+   public: static const uint32_t kTransmitBufferIndexTooLarge = 1 << 1 ;
 //   public: static const uint32_t kNoAvailableMBForSendingRemoteFrame = 1 << 1 ;
 //   public: static const uint32_t kNoReservedMBForSendingRemoteFrame = 1 << 2 ;
 //   public: static const uint32_t kMessageLengthExceedsPayload = 1 << 3 ;
 //   public: static const uint32_t kFlexCANinCAN20BMode = 1 << 4 ;
 //   public: static const uint32_t kFlexCANinCANFDBMode = 1 << 5 ;
-//
-// //--- Receiving messages
-//   public: inline bool available (void)   const { return (!mCANFD) && (mReceiveBufferCount > 0) ; }
-//   public: inline bool availableFD (void) const { return   mCANFD  && (mReceiveBufferCount > 0) ; }
-//   public: bool receive (CANMessage & outMessage) ;
-   public: bool receiveFD (CANFDMessage & outMessage) ;
-//   public: typedef void (*tFilterMatchCallBack) (const uint32_t inFilterIndex) ;
-//   public: bool dispatchReceivedMessage (const tFilterMatchCallBack inFilterMatchCallBack = nullptr) ;
-//   public: bool dispatchReceivedMessageFD (const tFilterMatchCallBack inFilterMatchCallBack = nullptr) ;
-//   public: inline uint32_t receiveBufferSize (void) const { return mReceiveBufferSize ; }
-//   public: inline uint32_t receiveBufferCount (void) const { return mReceiveBufferCount ; }
-//   public: inline uint32_t receiveBufferPeakCount (void) const { return mReceiveBufferPeakCount ; }
-//
+
+//--- Receiving messages
+   public: bool receiveFD0 (CANFDMessage & outMessage) ;
+
 // //--- FlexCAN controller state
 //   public: tControllerState controllerState (void) const ;
 //   public: uint32_t receiveErrorCounter (void) const ;
@@ -99,9 +92,12 @@ class ACANFD_FeatherM4CAN {
 //   private : uint8_t mActualPrimaryFilterCount = 0 ;
 //   private : uint8_t mMaxPrimaryFilterCount = 0 ;
 //   private: uint32_t * mCANFDAcceptanceFilterArray = nullptr ; //
-//
+
+//--- Driver Transmit buffer
+  private: ACANFD_FeatherM4CAN_Buffer16 mDriverTransmitBuffer ;
+
 //--- Driver receive buffer
-  private: ACANFD_FeatherM4CAN_Buffer16 mReceiveBuffer0 ;
+  private: ACANFD_FeatherM4CAN_Buffer16 mDriverReceiveBuffer0 ;
 
 //--- Driver transmit buffer
 //   private: CANFDMessage * mTransmitBuffer = nullptr ;
@@ -130,10 +126,12 @@ class ACANFD_FeatherM4CAN {
   private: uint32_t * mRxFIFO0Pointer = nullptr ;
   private: uint32_t * mTxBuffersPointer = nullptr ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareRxFIFO0Payload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
+  private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareTxBufferPayload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
   private: ACANFD_FeatherM4CAN_Module mModule ;
 
 //--- Private methods
   public: void interruptServiceRoutine (void) ;
+  private: void writeTxBuffer (const CANFDMessage & inMessage, const uint32_t inTxBufferIndex) ;
 
 //   private : uint32_t tryToSendRemoteFrame (const CANMessage & inMessage) ;
 //   private : uint32_t tryToSendDataFrame (const CANMessage & inMessage) ;
