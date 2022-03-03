@@ -1,12 +1,12 @@
 //--------------------------------------------------------------------------------------------------
 
-#include <ACANFD_FeatherM4CAN_Buffer16.h>
+#include <ACANFD_FeatherM4CAN_FIFO.h>
 
 //--------------------------------------------------------------------------------------------------
 // Default constructor
 //--------------------------------------------------------------------------------------------------
 
-ACANFD_FeatherM4CAN_Buffer16::ACANFD_FeatherM4CAN_Buffer16 (void) :
+ACANFD_FeatherM4CAN_FIFO::ACANFD_FeatherM4CAN_FIFO (void) :
 mBuffer (NULL),
 mSize (0),
 mReadIndex (0),
@@ -18,7 +18,7 @@ mPeakCount (0) {
 // Destructor
 //--------------------------------------------------------------------------------------------------
 
-ACANFD_FeatherM4CAN_Buffer16:: ~ ACANFD_FeatherM4CAN_Buffer16 (void) {
+ACANFD_FeatherM4CAN_FIFO:: ~ ACANFD_FeatherM4CAN_FIFO (void) {
   delete [] mBuffer ;
 }
 
@@ -26,7 +26,7 @@ ACANFD_FeatherM4CAN_Buffer16:: ~ ACANFD_FeatherM4CAN_Buffer16 (void) {
 // initWithSize
 //--------------------------------------------------------------------------------------------------
 
-void ACANFD_FeatherM4CAN_Buffer16::initWithSize (const uint16_t inSize) {
+void ACANFD_FeatherM4CAN_FIFO::initWithSize (const uint16_t inSize) {
   delete [] mBuffer ;
   mBuffer = new CANFDMessage [inSize] ;
   mSize = inSize ;
@@ -39,7 +39,7 @@ void ACANFD_FeatherM4CAN_Buffer16::initWithSize (const uint16_t inSize) {
 // append
 //--------------------------------------------------------------------------------------------------
 
-bool ACANFD_FeatherM4CAN_Buffer16::append (const CANFDMessage & inMessage) {
+bool ACANFD_FeatherM4CAN_FIFO::append (const CANFDMessage & inMessage) {
   const bool ok = mCount < mSize ;
   if (ok) {
     uint16_t writeIndex = mReadIndex + mCount ;
@@ -59,7 +59,7 @@ bool ACANFD_FeatherM4CAN_Buffer16::append (const CANFDMessage & inMessage) {
 // Remove
 //--------------------------------------------------------------------------------------------------
 
-bool ACANFD_FeatherM4CAN_Buffer16::remove (CANFDMessage & outMessage) {
+bool ACANFD_FeatherM4CAN_FIFO::remove (CANFDMessage & outMessage) {
   const bool ok = mCount > 0 ;
   if (ok) {
     outMessage = mBuffer [mReadIndex] ;
@@ -76,7 +76,7 @@ bool ACANFD_FeatherM4CAN_Buffer16::remove (CANFDMessage & outMessage) {
 // Free
 //--------------------------------------------------------------------------------------------------
 
-void ACANFD_FeatherM4CAN_Buffer16::free (void) {
+void ACANFD_FeatherM4CAN_FIFO::free (void) {
   delete [] mBuffer ; mBuffer = nullptr ;
   mSize = 0 ;
   mReadIndex = 0 ;

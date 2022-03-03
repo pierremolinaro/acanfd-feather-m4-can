@@ -8,19 +8,19 @@
 
 //--------------------------------------------------------------------------------------------------
 
-class ACANFD_FeatherM4CAN_Buffer16 {
+class ACANFD_FeatherM4CAN_FIFO {
 
   //································································································
   // Default constructor
   //································································································
 
-  public: ACANFD_FeatherM4CAN_Buffer16 (void) ;
+  public: ACANFD_FeatherM4CAN_FIFO (void) ;
 
   //································································································
   // Destructor
   //································································································
 
-  public: ~ ACANFD_FeatherM4CAN_Buffer16 (void) ;
+  public: ~ ACANFD_FeatherM4CAN_FIFO (void) ;
 
   //································································································
   // Private properties
@@ -76,8 +76,8 @@ class ACANFD_FeatherM4CAN_Buffer16 {
   // No copy
   //································································································
 
-  private: ACANFD_FeatherM4CAN_Buffer16 (const ACANFD_FeatherM4CAN_Buffer16 &) ;
-  private: ACANFD_FeatherM4CAN_Buffer16 & operator = (const ACANFD_FeatherM4CAN_Buffer16 &) ;
+  private: ACANFD_FeatherM4CAN_FIFO (const ACANFD_FeatherM4CAN_FIFO &) ;
+  private: ACANFD_FeatherM4CAN_FIFO & operator = (const ACANFD_FeatherM4CAN_FIFO &) ;
 } ;
 
 //--------------------------------------------------------------------------------------------------

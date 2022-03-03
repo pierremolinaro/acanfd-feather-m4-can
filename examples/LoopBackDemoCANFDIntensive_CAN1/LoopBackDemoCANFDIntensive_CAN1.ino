@@ -13,7 +13,7 @@
 
 //-----------------------------------------------------------------
 
-static ACANFD_FeatherM4CAN_Buffer16 gBuffer ;
+static ACANFD_FeatherM4CAN_FIFO gBuffer ;
 
 //-----------------------------------------------------------------
 
@@ -72,9 +72,9 @@ void setup () {
 
 //-----------------------------------------------------------------
 
-static uint32_t gSeed = 0 ;
 
 static uint32_t pseudoRandomValue (void) {
+  static uint32_t gSeed = 0 ;
   gSeed = 8253729U * gSeed + 2396403U ;
   return gSeed ;
 }
@@ -130,7 +130,7 @@ void loop () {
     CANFDMessage frame ;
     frame.idx = sendBufferIndex ;
     const uint32_t r = pseudoRandomValue () ;
-    frame.ext = (r & (1 << 29))  != 0 ;
+    frame.ext = (r & (1 << 29)) != 0 ;
     frame.type = CANFDMessage::Type (r >> 30) ;
     frame.id = r & 0x1FFFFFFF ;
     if (frame.ext) {

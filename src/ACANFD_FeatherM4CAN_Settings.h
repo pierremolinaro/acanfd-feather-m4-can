@@ -15,7 +15,7 @@ class ACANFD_FeatherM4CAN_Settings {
 //··································································································
 
   public: typedef enum : uint8_t {
-    NORMAL,
+    NORMAL_FD,
     INTERNAL_LOOP_BACK,
     EXTERNAL_LOOP_BACK,
   } ModuleMode ;
@@ -70,7 +70,10 @@ class ACANFD_FeatherM4CAN_Settings {
   public: bool mBitSettingOk = true ; // The above configuration is correct
 
 //--- Module Mode
-  public : ModuleMode mModuleMode = NORMAL ;
+  public : ModuleMode mModuleMode = NORMAL_FD ;
+
+//--- Driver receive FIFO Size
+  public: uint16_t mDriverReceiveFIFO0Size = 10 ;
 
 //--- Hardware Rx FIFO 0
   public: uint8_t mHardwareRxFIFO0Size = 64 ; // 0 ... 64
@@ -86,11 +89,8 @@ class ACANFD_FeatherM4CAN_Settings {
 //--- Transceiver Delay Compensation
   public: uint8_t mTransceiverDelayCompensation = 5 ; // 0 ... 127
 
-//--- Driver receive buffer Size
-  public: uint16_t mDriverReceiveBuffer0Size = 32 ;
-
 //--- Driver transmit buffer Size
-  public: uint16_t mDriverTransmitBufferSize = 32 ;
+  public: uint16_t mDriverTransmitFIFOSize = 20 ;
 
 
 //--- Hardware Transmit Buffers

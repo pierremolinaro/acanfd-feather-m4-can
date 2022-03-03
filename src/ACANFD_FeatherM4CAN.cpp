@@ -30,8 +30,8 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 //--- Configure if no error
   if (0 == errorCode) {
   //------------------------------------------------------ Configure Driver buffers
-    mDriverTransmitBuffer.initWithSize (inSettings.mDriverTransmitBufferSize) ;
-    mDriverReceiveBuffer0.initWithSize (inSettings.mDriverReceiveBuffer0Size) ;
+    mDriverTransmitFIFO.initWithSize (inSettings.mDriverTransmitFIFOSize) ;
+    mDriverReceiveFIFO0.initWithSize (inSettings.mDriverReceiveFIFO0Size) ;
   //------------------------------------------------------ Enable CAN Clock (48 MHz)
     switch (mModule) {
     case ACANFD_FeatherM4CAN_Module::can0 :
@@ -55,7 +55,7 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   //------------------------------------------------------ Select mode
     mModulePtr->TEST.reg = 0 ;
     switch (inSettings.mModuleMode) {
-    case ACANFD_FeatherM4CAN_Settings::NORMAL :
+    case ACANFD_FeatherM4CAN_Settings::NORMAL_FD :
       break ;
     case ACANFD_FeatherM4CAN_Settings::INTERNAL_LOOP_BACK :
       mModulePtr->TEST.reg = CAN_TEST_LBCK ;
@@ -141,8 +141,8 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     mTxBuffersPointer = ptr ;
     mModulePtr->TXBC.reg = // Page 1164
       (uint32_t (ptr) & 0xFFFFU) // Tx Buffer start address
-//     |
-//       (inSettings.mHardwareTransmitTxFIFOSize << 24) // Number of Transmit FIFO / Queue buffers
+    |
+      (inSettings.mHardwareTransmitTxFIFOSize << 24) // Number of Transmit FIFO / Queue buffers
     |
       (inSettings.mHardwareDedicacedTxBufferCount << 16) // Number of Dedicaced Tx buffers
     ;
@@ -231,7 +231,7 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 
 bool ACANFD_FeatherM4CAN::receiveFD0 (CANFDMessage & outMessage) {
   noInterrupts () ;
-    const bool hasMessage = mDriverReceiveBuffer0.remove (outMessage) ;
+    const bool hasMessage = mDriverReceiveFIFO0.remove (outMessage) ;
   interrupts () ;
   return hasMessage ;
 }
@@ -244,7 +244,7 @@ bool ACANFD_FeatherM4CAN::sendBufferNotFullForIndex (const uint32_t inMessageInd
   bool canSend = false ;
   noInterrupts () ;
     if (inMessageIndex == 0) { // Send via Tx FIFO ?
-      canSend = !mDriverTransmitBuffer.isFull () ;
+      canSend = !mDriverTransmitFIFO.isFull () ;
     }else{ // Send via dedicaced Tx Buffer ?
       const uint32_t numberOfDedicacedTxBuffers = (mModulePtr->TXBC.reg >> 16) & 0x3F ; // Page 1164
       if (inMessageIndex <= numberOfDedicacedTxBuffers) {
@@ -264,13 +264,13 @@ uint32_t ACANFD_FeatherM4CAN::tryToSendReturnStatusFD (const CANFDMessage & inMe
     if (inMessage.idx == 0) { // Send via Tx FIFO ?
       const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
       const uint32_t hardwareTransmitFifoFreeLevel = txfqs & 0x3F ; // Page 1165
-      if ((hardwareTransmitFifoFreeLevel > 0) && mDriverTransmitBuffer.isEmpty ()) {
+      if ((hardwareTransmitFifoFreeLevel > 0) && mDriverTransmitFIFO.isEmpty ()) {
         const uint32_t putIndex = (txfqs >> 16) & 0x1F ;
         writeTxBuffer (inMessage, putIndex) ;
-      }else if (mDriverTransmitBuffer.isFull ()) {
+      }else if (mDriverTransmitFIFO.isFull ()) {
         sendStatus = kTransmitBufferOverflow ;
       }else{
-        mDriverTransmitBuffer.append (inMessage) ;
+        mDriverTransmitFIFO.append (inMessage) ;
       }
     }else{ // Send via dedicaced Tx Buffer ?
       const uint32_t numberOfDedicacedTxBuffers = (mModulePtr->TXBC.reg >> 16) & 0x3F ; // Page 1164
@@ -409,7 +409,7 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
     //--- Interrupt Acknowledge
       mModulePtr->IR.reg = CAN_IR_RF0N ;
     //--- Enter message into driver receive buffer 0
-      mDriverReceiveBuffer0.append (message) ;
+      mDriverReceiveFIFO0.append (message) ;
     }else if ((it & CAN_IR_TC) != 0) {
     //--- Interrupt Acknowledge
       mModulePtr->IR.reg = CAN_IR_TC ;
@@ -419,7 +419,7 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
       while (writeMessage) {
         const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
         const uint32_t txFifoFreeLevel = txfqs & 0x3F ;
-        if ((txFifoFreeLevel > 0) && mDriverTransmitBuffer.remove (message)) {
+        if ((txFifoFreeLevel > 0) && mDriverTransmitFIFO.remove (message)) {
           const uint32_t putIndex = (txfqs >> 16) & 0x1F ;
           writeTxBuffer (message, putIndex) ;
         }else{

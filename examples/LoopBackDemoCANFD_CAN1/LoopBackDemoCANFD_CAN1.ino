@@ -4,7 +4,7 @@
 //-----------------------------------------------------------------
 
 #ifndef ARDUINO_FEATHER_M4_CAN
-  #error "This sketch should be compiled for Arduino Feather M4 CAN (SAME51)"
+#error "This sketch should be compiled for Arduino Feather M4 CAN (SAME51)"
 #endif
 
 //-----------------------------------------------------------------
@@ -20,7 +20,7 @@ void setup () {
     delay (50) ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
   }
-  Serial.println ("CAN0 CANFD loopback test") ;
+  Serial.println ("CAN1 CANFD loopback test") ;
   ACANFD_FeatherM4CAN_Settings settings (1000 * 1000, DataBitRateFactor::x2) ;
 
   Serial.print ("Bit Rate prescaler: ") ;
@@ -55,11 +55,11 @@ void setup () {
   Serial.println (settings.exactDataBitRate () ? "yes" : "no") ;
 
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
-  
+
   const uint32_t errorCode = can1.beginFD (settings) ;
   if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
-  }else{
+  } else {
     Serial.print ("Error can configuration: 0x") ;
     Serial.println (errorCode, HEX) ;
   }
@@ -67,9 +67,8 @@ void setup () {
 
 //-----------------------------------------------------------------
 
-static uint32_t gSeed = 0 ;
-
 static uint32_t pseudoRandomValue (void) {
+  static uint32_t gSeed = 0 ;
   gSeed = 8253729U * gSeed + 2396403U ;
   return gSeed ;
 }
@@ -80,7 +79,8 @@ static const uint32_t PERIOD = 1000 ;
 static uint32_t gBlinkDate = PERIOD ;
 static uint32_t gSentCount = 0 ;
 static uint32_t gReceiveCount = 0 ;
-static CANFDMessage gSendFrame ;
+static CANFDMessage gSentFrame ;
+static bool gOk = true ;
 
 //-----------------------------------------------------------------
 
@@ -88,76 +88,78 @@ void loop () {
   if (gBlinkDate <= millis ()) {
     gBlinkDate += PERIOD ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
-    const uint32_t r = pseudoRandomValue () ;
-    gSendFrame.ext = (r & (1 << 29))  != 0 ;
-    gSendFrame.type = CANFDMessage::Type (r >> 30) ;
-    gSendFrame.id = r & 0x1FFFFFFF ;
-    if (!gSendFrame.ext) {
-      gSendFrame.id &= 0x7FF ;
-    }
-    switch (gSendFrame.type) {
-    case CANFDMessage::CAN_REMOTE :
-      gSendFrame.len = pseudoRandomValue () % 9 ;
-      break ;
-    case CANFDMessage::CAN_DATA :
-      gSendFrame.len = pseudoRandomValue () % 9 ;
-      for (uint32_t i=0 ; i<gSendFrame.len ; i++) {
-        gSendFrame.data [i] = uint8_t (pseudoRandomValue ()) ;
+    if (gOk) {
+      const uint32_t r = pseudoRandomValue () ;
+      gSentFrame.idx = 0 ;
+      gSentFrame.ext = (r & (1 << 29))  != 0 ;
+      gSentFrame.type = CANFDMessage::Type (r >> 30) ;
+      gSentFrame.id = r & 0x1FFFFFFF ;
+      if (!gSentFrame.ext) {
+        gSentFrame.id &= 0x7FF ;
       }
-      break ;
-    case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
-    case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
-      gSendFrame.len = pseudoRandomValue () % 9 ;
-      for (uint32_t i=0 ; i<gSendFrame.len ; i++) {
-        gSendFrame.data [i] = uint8_t (pseudoRandomValue ()) ;
+      switch (gSentFrame.type) {
+        case CANFDMessage::CAN_REMOTE :
+          gSentFrame.len = pseudoRandomValue () % 9 ;
+          break ;
+        case CANFDMessage::CAN_DATA :
+          gSentFrame.len = pseudoRandomValue () % 9 ;
+          for (uint32_t i = 0 ; i < gSentFrame.len ; i++) {
+            gSentFrame.data [i] = uint8_t (pseudoRandomValue ()) ;
+          }
+          break ;
+        case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
+        case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
+          gSentFrame.len = pseudoRandomValue () % 9 ;
+          for (uint32_t i = 0 ; i < gSentFrame.len ; i++) {
+            gSentFrame.data [i] = uint8_t (pseudoRandomValue ()) ;
+          }
+          break ;
       }
-      break ;  
+      const uint32_t sendStatus = can1.tryToSendReturnStatusFD (gSentFrame) ;
+      if (sendStatus == 0) {
+        gSentCount += 1 ;
+        Serial.print ("Sent ") ;
+        Serial.println (gSentCount) ;
+      }else{
+        Serial.print ("Sent error 0x") ;
+        Serial.println (sendStatus) ;
+      }
     }
-    const uint32_t sendStatus = can1.tryToSendReturnStatusFD (gSendFrame) ;
-    if (sendStatus == 0) {
-      gSentCount += 1 ;
-      Serial.print ("Sent ") ;
-      Serial.println (gSentCount) ;
-    }else{
-      Serial.print ("Sent error 0x") ;
-      Serial.println (sendStatus) ;    
-    }
-//    Serial.print ("  RXF0S 0x") ;
-//    Serial.println (CAN0->RXF0S.reg, HEX) ;
   }
-//--- Receive frame
+  //--- Receive frame
   CANFDMessage frame ;
-  if (can1.receiveFD0 (frame)) {
-    gReceiveCount += 1 ;
-    bool sameFrames = gSendFrame.id == frame.id ;
+  if (gOk && can1.receiveFD0 (frame)) {
+    bool sameFrames = gSentFrame.id == frame.id ;
     if (sameFrames) {
-      sameFrames = gSendFrame.type == frame.type ;
+      sameFrames = gSentFrame.type == frame.type ;
     }
     if (sameFrames) {
-      sameFrames = gSendFrame.len == frame.len ;
+      sameFrames = gSentFrame.len == frame.len ;
     }
-    if (gSendFrame.type != CANFDMessage::CAN_REMOTE) {
-      for (uint32_t i=0 ; (i<frame.len) && sameFrames ; i++) {
-        sameFrames = gSendFrame.data [i] == frame.data [i] ;
+    if (gSentFrame.type != CANFDMessage::CAN_REMOTE) {
+      for (uint32_t i = 0 ; (i < frame.len) && sameFrames ; i++) {
+        sameFrames = gSentFrame.data [i] == frame.data [i] ;
       }
     }
     if (sameFrames) {
+      gReceiveCount += 1 ;
       Serial.print ("Received ") ;
       Serial.println (gReceiveCount) ;
     }else{
+      gOk = false ;
       Serial.println ("Receive error") ;
       Serial.print ("  IDF: 0x") ;
-      Serial.print (gSendFrame.id, HEX) ;
+      Serial.print (gSentFrame.id, HEX) ;
       Serial.print (" :: 0x") ;
       Serial.println (frame.id, HEX) ;
       Serial.print ("  TYPE: ") ;
-      Serial.print (gSendFrame.type) ;
+      Serial.print (gSentFrame.type) ;
       Serial.print (" :: ") ;
       Serial.println (frame.type) ;
       Serial.print ("  LENGTH: ") ;
-      Serial.print (gSendFrame.len) ;
+      Serial.print (gSentFrame.len) ;
       Serial.print (" :: ") ;
-      Serial.println (frame.len) ;     
+      Serial.println (frame.len) ;
     }
   }
 }
