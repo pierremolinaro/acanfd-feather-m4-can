@@ -4,10 +4,22 @@
 //-----------------------------------------------------------------
 
 #ifndef ARDUINO_FEATHER_M4_CAN
-#error "This sketch should be compiled for Arduino Feather M4 CAN (SAME51)"
+  #error "This sketch should be compiled for Arduino Feather M4 CAN (SAME51)"
 #endif
 
 //-----------------------------------------------------------------
+// IMPORTANT:
+//   <ACANFD_FeatherM4CAN.h> should be included only from the .ino file
+//   From an other file, include <ACANFD_FeatherM4CAN-from-cpp.h>
+//   Before including <ACANFD_FeatherM4CAN.h>, you should define 
+//   Message RAM size for CAN0 and Message RAM size for CAN1.
+//   Maximum size is 4,352 (4,352 32-bit words).
+//   A 0 size means the CAN module is not configured; its TxCAN and RxCAN pins
+//   can be freely used for an other function.
+//   The begin method checks if actual size is greater or equal to required size.
+
+#define CAN0_MESSAGE_RAM_SIZE (0)
+#define CAN1_MESSAGE_RAM_SIZE (1728)
 
 #include <ACANFD_FeatherM4CAN.h>
 
@@ -57,9 +69,12 @@ void setup () {
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
 
   const uint32_t errorCode = can1.beginFD (settings) ;
+  Serial.print ("Message RAM Minimum required size: ") ;
+  Serial.print (can1.messageRamRequiredSize ()) ;
+  Serial.println (" words") ;
   if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
-  } else {
+  }else{
     Serial.print ("Error can configuration: 0x") ;
     Serial.println (errorCode, HEX) ;
   }

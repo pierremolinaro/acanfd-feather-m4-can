@@ -51,12 +51,12 @@ static const uint32_t MAX_BRP = 32 ;
 //    CONSTRUCTOR FOR CANFD
 //--------------------------------------------------------------------------------------------------
 
-ACANFD_FeatherM4CAN_Settings::ACANFD_FeatherM4CAN_Settings (const uint32_t inWhishedArbitrationBitRate,
+ACANFD_FeatherM4CAN_Settings::ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
                                                             const DataBitRateFactor inDataBitRateFactor,
                                                             const uint32_t inTolerancePPM) :
-mWhishedArbitrationBitRate (inWhishedArbitrationBitRate),
+mDesiredArbitrationBitRate (inDesiredArbitrationBitRate),
 mDataBitRateFactor (inDataBitRateFactor) {
-  const uint32_t dataBitRate = inWhishedArbitrationBitRate * uint32_t (inDataBitRateFactor) ;
+  const uint32_t dataBitRate = inDesiredArbitrationBitRate * uint32_t (inDataBitRateFactor) ;
   uint32_t dataTQCount = min (MAX_DATA_TQ_COUNT, MAX_ARBITRATION_TQ_COUNT / uint32_t (inDataBitRateFactor)) ;
   uint32_t smallestError = UINT32_MAX ;
   uint32_t bestBRP = MAX_BRP ; // Setting for slowest bitrate
@@ -107,9 +107,9 @@ mDataBitRateFactor (inDataBitRateFactor) {
 //--- Compute the remaining number of TQ once PS2 and SyncSeg are removed
   mArbitrationPhaseSegment1 = bestArbitrationTQCount - arbitrationPS2 - 1 /* Sync Seg */ ;
 //--- Triple sampling ?
-  mTripleSampling = (mWhishedArbitrationBitRate <= 125000) && (mArbitrationPhaseSegment1 >= 2) ;
+  mTripleSampling = (mDesiredArbitrationBitRate <= 125000) && (mArbitrationPhaseSegment1 >= 2) ;
 //--- Final check of the configuration
-  const uint32_t W = bestArbitrationTQCount * mWhishedArbitrationBitRate * mBitRatePrescaler ;
+  const uint32_t W = bestArbitrationTQCount * mDesiredArbitrationBitRate * mBitRatePrescaler ;
   const uint64_t diff = (CAN_ROOT_CLOCK_FREQUENCY > W) ? (CAN_ROOT_CLOCK_FREQUENCY - W) : (W - CAN_ROOT_CLOCK_FREQUENCY) ;
   const uint64_t ppm = uint64_t (1000 * 1000) ;
   mBitSettingOk = (diff * ppm) <= (uint64_t (W) * inTolerancePPM) ;
@@ -133,21 +133,21 @@ uint32_t ACANFD_FeatherM4CAN_Settings::actualDataBitRate (void) const {
 
 bool ACANFD_FeatherM4CAN_Settings::exactArbitrationBitRate (void) const {
   const uint32_t TQCount = 1 /* Sync Seg */ + mArbitrationPhaseSegment1 + mArbitrationPhaseSegment2 ;
-  return CAN_ROOT_CLOCK_FREQUENCY == (mBitRatePrescaler * mWhishedArbitrationBitRate * TQCount) ;
+  return CAN_ROOT_CLOCK_FREQUENCY == (mBitRatePrescaler * mDesiredArbitrationBitRate * TQCount) ;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 bool ACANFD_FeatherM4CAN_Settings::exactDataBitRate (void) const {
   const uint32_t TQCount = 1 /* Sync Seg */ + mDataPhaseSegment1 + mDataPhaseSegment2 ;
-  return CAN_ROOT_CLOCK_FREQUENCY == (mBitRatePrescaler * mWhishedArbitrationBitRate * TQCount * uint32_t (mDataBitRateFactor)) ;
+  return CAN_ROOT_CLOCK_FREQUENCY == (mBitRatePrescaler * mDesiredArbitrationBitRate * TQCount * uint32_t (mDataBitRateFactor)) ;
 }
 
 //--------------------------------------------------------------------------------------------------
 
 uint32_t ACANFD_FeatherM4CAN_Settings::ppmFromWishedBitRate (void) const {
   const uint32_t TQCount = 1 /* Sync Seg */ + mArbitrationPhaseSegment1 + mArbitrationPhaseSegment2 ;
-  const uint32_t W = TQCount * mWhishedArbitrationBitRate * mBitRatePrescaler ;
+  const uint32_t W = TQCount * mDesiredArbitrationBitRate * mBitRatePrescaler ;
   const uint64_t diff = (CAN_ROOT_CLOCK_FREQUENCY > W) ? (CAN_ROOT_CLOCK_FREQUENCY - W) : (W - CAN_ROOT_CLOCK_FREQUENCY) ;
   const uint64_t ppm = uint64_t (1000 * 1000) ;
   return uint32_t ((diff * ppm) / W) ;

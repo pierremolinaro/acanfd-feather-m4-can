@@ -2,16 +2,18 @@
 // Page numbers refer to DS60001507G data sheet
 //--------------------------------------------------------------------------------------------------
 
-#include <ACANFD_FeatherM4CAN.h>
+#include <ACANFD_FeatherM4CAN-from-cpp.h>
 
 //--------------------------------------------------------------------------------------------------
 //    Constructor
 //--------------------------------------------------------------------------------------------------
 
 ACANFD_FeatherM4CAN::ACANFD_FeatherM4CAN (const ACANFD_FeatherM4CAN_Module inModule,
-                                          uint32_t * inMessageRAMPtr) :
+                                          uint32_t * inMessageRAMPtr,
+                                          const uint32_t inMessageRamWordSize) :
 mModulePtr ((inModule == ACANFD_FeatherM4CAN_Module::can0) ? CAN0 : CAN1),
 mMessageRAMPtr (inMessageRAMPtr),
+mMessageRamWordSize (inMessageRamWordSize),
 mModule (inModule) {
 }
 
@@ -20,145 +22,149 @@ mModule (inModule) {
 //--------------------------------------------------------------------------------------------------
 
 uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSettings) {
-//                                    const ACANFDFilter inFilters [],
-//                                    const uint32_t inFilterCount) {
-  uint32_t errorCode = inSettings.CANFDBitSettingConsistency () ; // No error code
-//--- No configuration if CAN bit settings are incorrect
-  if (!inSettings.mBitSettingOk) {
-    errorCode |= kCANBitConfiguration ;
+  uint32_t errorCode = inSettings.CANFDBitSettingConsistency () ;
+//------------------------------------------------------ Check settings
+  if (inSettings.mHardwareRxFIFO0Size > 64) {
+    errorCode |= kHardwareRxFIFO0SizeGreaterThan64 ;
   }
-//--- Configure if no error
-  if (0 == errorCode) {
-  //------------------------------------------------------ Configure Driver buffers
-    mDriverTransmitFIFO.initWithSize (inSettings.mDriverTransmitFIFOSize) ;
-    mDriverReceiveFIFO0.initWithSize (inSettings.mDriverReceiveFIFO0Size) ;
-  //------------------------------------------------------ Enable CAN Clock (48 MHz)
-    switch (mModule) {
-    case ACANFD_FeatherM4CAN_Module::can0 :
-      GCLK->PCHCTRL [CAN0_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK1 ;
-      MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN0 ;
-      break ;
-    case ACANFD_FeatherM4CAN_Module::can1 :
-      GCLK->PCHCTRL [CAN1_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK1 ;
-      MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN1 ;
-      break ;
-    }
-  //------------------------------------------------------ Start configuring CAN module
-    mModulePtr->CCCR.reg = CAN_CCCR_INIT ; // Page 1123
-    while ((mModulePtr->CCCR.reg & CAN_CCCR_INIT) == 0) {
+  if (inSettings.mHardwareTransmitTxFIFOSize > 32) {
+    errorCode |= kHardwareTransmitFIFOSizeGreaterThan32 ;
+  }
+  if (inSettings.mHardwareDedicacedTxBufferCount > 32) {
+    errorCode |= kDedicacedTransmitTxBufferCountGreaterThan32 ;
+  }
+  if ((inSettings.mHardwareTransmitTxFIFOSize + inSettings.mHardwareDedicacedTxBufferCount) > 32) {
+    errorCode |= kTxBufferCountGreaterThan32 ;
+  }
+//------------------------------------------------------ Enable CAN Clock (48 MHz)
+  switch (mModule) {
+  case ACANFD_FeatherM4CAN_Module::can0 :
+    GCLK->PCHCTRL [CAN0_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK1 ;
+    MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN0 ;
+    break ;
+  case ACANFD_FeatherM4CAN_Module::can1 :
+    GCLK->PCHCTRL [CAN1_GCLK_ID].reg = GCLK_PCHCTRL_CHEN | GCLK_PCHCTRL_GEN_GCLK1 ;
+    MCLK->AHBMASK.reg |= MCLK_AHBMASK_CAN1 ;
+    break ;
+  }
+//------------------------------------------------------ Start configuring CAN module
+  mModulePtr->CCCR.reg = CAN_CCCR_INIT ; // Page 1123
+  while ((mModulePtr->CCCR.reg & CAN_CCCR_INIT) == 0) {
 //      mModulePtr->CCCR.reg = CAN_CCCR_INIT ;
-    }
-  //------------------------------------------------------ Enable configuration change
-    mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE ;
-    mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE | CAN_CCCR_TEST ;
-    uint32_t cccr  = CAN_CCCR_BRSE | CAN_CCCR_FDOE ;
-  //------------------------------------------------------ Select mode
-    mModulePtr->TEST.reg = 0 ;
-    switch (inSettings.mModuleMode) {
-    case ACANFD_FeatherM4CAN_Settings::NORMAL_FD :
-      break ;
-    case ACANFD_FeatherM4CAN_Settings::INTERNAL_LOOP_BACK :
-      mModulePtr->TEST.reg = CAN_TEST_LBCK ;
-      cccr |= CAN_CCCR_MON | CAN_CCCR_TEST ;
-      break ;
-    case ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK :
-      mModulePtr->TEST.reg = CAN_TEST_LBCK ;
-      cccr |= CAN_CCCR_TEST ;
-      break ;
-    }
-    if (!inSettings.mEnableRetransmission) {
-      cccr |= CAN_CCCR_DAR ; // Page 1123
-    }
-  //------------------------------------------------------ Set nominal Bit Timing and Prescaler (page 1125)
-    mModulePtr->NBTP.reg =
-      (uint32_t (inSettings.mArbitrationSJW - 1) << 25)
-    |
-      (uint32_t (inSettings.mBitRatePrescaler - 1) << 16)
-    |
-      (uint32_t (inSettings.mArbitrationPhaseSegment1 - 1) << 8)
-    |
-      (uint32_t (inSettings.mArbitrationPhaseSegment2 - 1) << 0)
-    ;
+  }
+//------------------------------------------------------ Enable configuration change
+  mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE ;
+  mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE | CAN_CCCR_TEST ;
+  uint32_t cccr  = CAN_CCCR_BRSE | CAN_CCCR_FDOE ;
+//------------------------------------------------------ Select mode
+  mModulePtr->TEST.reg = 0 ;
+  switch (inSettings.mModuleMode) {
+  case ACANFD_FeatherM4CAN_Settings::NORMAL_FD :
+    break ;
+  case ACANFD_FeatherM4CAN_Settings::INTERNAL_LOOP_BACK :
+    mModulePtr->TEST.reg = CAN_TEST_LBCK ;
+    cccr |= CAN_CCCR_MON | CAN_CCCR_TEST ;
+    break ;
+  case ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK :
+    mModulePtr->TEST.reg = CAN_TEST_LBCK ;
+    cccr |= CAN_CCCR_TEST ;
+    break ;
+  }
+  if (!inSettings.mEnableRetransmission) {
+    cccr |= CAN_CCCR_DAR ; // Page 1123
+  }
+//------------------------------------------------------ Set nominal Bit Timing and Prescaler (page 1125)
+  mModulePtr->NBTP.reg =
+    (uint32_t (inSettings.mArbitrationSJW - 1) << 25)
+  |
+    (uint32_t (inSettings.mBitRatePrescaler - 1) << 16)
+  |
+    (uint32_t (inSettings.mArbitrationPhaseSegment1 - 1) << 8)
+  |
+    (uint32_t (inSettings.mArbitrationPhaseSegment2 - 1) << 0)
+  ;
 //     Serial.print ("NBTP 0x") ;
 //     Serial.println (mModulePtr->NBTP.reg, HEX) ;
-  //------------------------------------------------------ Set data Bit Timing and Prescaler (page 1119)
-    mModulePtr->DBTP.reg =
-      CAN_DBTP_TDC // Enable Transceiver Delay Compensation ?
-    |
-      (uint32_t (inSettings.mBitRatePrescaler - 1) << 16)
-    |
-      (uint32_t (inSettings.mDataPhaseSegment1 - 1) << 8)
-    |
-      (uint32_t (inSettings.mDataPhaseSegment2 - 1) << 4)
-    |
-      (uint32_t (inSettings.mDataSJW - 1) << 0)
-    ;
-  //------------------------------------------------------ Transmitter Delay Compensation
-    mModulePtr->TDCR.reg = uint32_t (inSettings.mTransceiverDelayCompensation) << 8 ; // Page 1134
-  //------------------------------------------------------ Global Filter Configuration (page 1148)
-    mModulePtr->GFC.reg =
-      (uint32_t (inSettings.mDiscardReceivedStandardRemoteFrames) << 1)
-    |
-      (uint32_t (inSettings.mDiscardReceivedExtendedRemoteFrames) << 0)
-    ;
-  //------------------------------------------------------ Configure message RAM
+//------------------------------------------------------ Set data Bit Timing and Prescaler (page 1119)
+  mModulePtr->DBTP.reg =
+    CAN_DBTP_TDC // Enable Transceiver Delay Compensation ?
+  |
+    (uint32_t (inSettings.mBitRatePrescaler - 1) << 16)
+  |
+    (uint32_t (inSettings.mDataPhaseSegment1 - 1) << 8)
+  |
+    (uint32_t (inSettings.mDataPhaseSegment2 - 1) << 4)
+  |
+    (uint32_t (inSettings.mDataSJW - 1) << 0)
+  ;
+//------------------------------------------------------ Transmitter Delay Compensation
+  mModulePtr->TDCR.reg = uint32_t (inSettings.mTransceiverDelayCompensation) << 8 ; // Page 1134
+//------------------------------------------------------ Global Filter Configuration (page 1148)
+  mModulePtr->GFC.reg =
+    (uint32_t (inSettings.mDiscardReceivedStandardRemoteFrames) << 1)
+  |
+    (uint32_t (inSettings.mDiscardReceivedExtendedRemoteFrames) << 0)
+  ;
+//------------------------------------------------------ Configure message RAM
 //    mModulePtr->MRCFG.reg = 3 ; // Page 1118
-    uint32_t * ptr = mMessageRAMPtr ;
-  //--- Allocate Standard ID Filters (0 ... 128 elements -> 0 ... 128 words)
-     mModulePtr->SIDFC.reg = 0 ;
+  uint32_t * ptr = mMessageRAMPtr ;
+//--- Allocate Standard ID Filters (0 ... 128 elements -> 0 ... 128 words)
+   mModulePtr->SIDFC.reg = 0 ;
 //       (uint32_t (ptr) & 0xFFFFU) // Standard ID Filter Configuration, page 1269
 //     |
 //       (1U << 16) // One standard filter
 //     ;
 //     *ptr = (2U << 30) | (1U << 27) ; // Page 1149
 //     ptr += 1 ;
-  //--- Allocate Extended ID Filters (0 ... 64 elements -> 0 ... 128 words)
-    mModulePtr->XIDFC.reg = 0 ; // Page 1150
-  //--- Allocate Rx FIFO 0 (0 ... 64 elements -> 0 ... 1152 words)
-    mRxFIFO0Pointer = ptr ;
+//--- Allocate Extended ID Filters (0 ... 64 elements -> 0 ... 128 words)
+  mModulePtr->XIDFC.reg = 0 ; // Page 1150
+//--- Allocate Rx FIFO 0 (0 ... 64 elements -> 0 ... 1152 words)
+  mRxFIFO0Pointer = ptr ;
 //     Serial.print ("RxFIFO0 ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
-    mHardwareRxFIFO0Payload = inSettings.mHardwareRxFIFO0Payload ;
-    mModulePtr->RXF0C.reg = // Page 1155
-      (uint32_t (ptr) & 0xFFFFU) // FOSA
-    |
-      (uint32_t (inSettings.mHardwareRxFIFO0Size) << 16) // F0S
-    ;
-    mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO0Payload) ; // Rx FIFO 0 element size (page 1285)
-    ptr += inSettings.mHardwareRxFIFO0Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (inSettings.mHardwareRxFIFO0Payload) ;
-  //--- Allocate Rx FIFO 1 (0 ... 64 elements -> 0 ... 1152 words)
-    mModulePtr->RXF1C.reg = 0 ; // Page 1159
-    ptr += 1152 ;
-  //--- Allocate Rx Buffers (0 ... 64 elements -> 0 ... 1152 words)
-    mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
-    mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
+  mHardwareRxFIFO0Payload = inSettings.mHardwareRxFIFO0Payload ;
+  mModulePtr->RXF0C.reg = // Page 1155
+    (uint32_t (ptr) & 0xFFFFU) // FOSA
+  |
+    (uint32_t (inSettings.mHardwareRxFIFO0Size) << 16) // F0S
+  ;
+  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO0Payload) ; // Rx FIFO 0 element size (page 1285)
+  ptr += inSettings.mHardwareRxFIFO0Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (inSettings.mHardwareRxFIFO0Payload) ;
+//--- Allocate Rx FIFO 1 (0 ... 64 elements -> 0 ... 1152 words)
+  mModulePtr->RXF1C.reg = 0 ; // Page 1159
+//    ptr += 1152 ;
+//--- Allocate Rx Buffers (0 ... 64 elements -> 0 ... 1152 words)
+  mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
+  mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
 //     Serial.print ("RxBuffer ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
 //    ptr += 18 ; // Advance for 18 words
-  //--- Allocate Tx Event / FIFO (0 ... 32 elements -> 0 ... 64 words)
-  //       EMPTY
-  //--- Allocate Tx Buffers (0 ... 32 elements -> 0 ... 576 words)
-    mHardwareTxBufferPayload = inSettings.mHardwareTransmitBufferPayload ;
-    mModulePtr->TXESC.reg = uint32_t (mHardwareTxBufferPayload) ; // page 1166
-    mTxBuffersPointer = ptr ;
-    mModulePtr->TXBC.reg = // Page 1164
-      (uint32_t (ptr) & 0xFFFFU) // Tx Buffer start address
-    |
-      (inSettings.mHardwareTransmitTxFIFOSize << 24) // Number of Transmit FIFO / Queue buffers
-    |
-      (inSettings.mHardwareDedicacedTxBufferCount << 16) // Number of Dedicaced Tx buffers
-    ;
-    const uint32_t txBufferCount = inSettings.mHardwareDedicacedTxBufferCount + inSettings.mHardwareTransmitTxFIFOSize ;
-    ptr += txBufferCount * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareTxBufferPayload) ;
-  //------------------------------------------------------ Display Message RAM Allocation
-    Serial.print ("Message RAM start 0x") ;
-    Serial.println (uint32_t (mMessageRAMPtr), HEX) ;
-    Serial.print ("  RxFIFO 0x") ;
-    Serial.println (uint32_t (mRxFIFO0Pointer), HEX) ;
-    Serial.print ("  TxBuffers 0x") ;
-    Serial.println (uint32_t (mTxBuffersPointer), HEX) ;
-    const uint32_t minRequiredSize = ptr - mMessageRAMPtr ;
-    Serial.print ("  Message RAM Minimum required size ") ;
-    Serial.print (minRequiredSize) ;
-    Serial.println (" words") ;
+//--- Allocate Tx Event / FIFO (0 ... 32 elements -> 0 ... 64 words)
+//       EMPTY
+//--- Allocate Tx Buffers (0 ... 32 elements -> 0 ... 576 words)
+  mHardwareTxBufferPayload = inSettings.mHardwareTransmitBufferPayload ;
+  mModulePtr->TXESC.reg = uint32_t (mHardwareTxBufferPayload) ; // page 1166
+  mTxBuffersPointer = ptr ;
+  mModulePtr->TXBC.reg = // Page 1164
+    (uint32_t (ptr) & 0xFFFFU) // Tx Buffer start address
+  |
+    (inSettings.mHardwareTransmitTxFIFOSize << 24) // Number of Transmit FIFO / Queue buffers
+  |
+    (inSettings.mHardwareDedicacedTxBufferCount << 16) // Number of Dedicaced Tx buffers
+  ;
+  const uint32_t txBufferCount = inSettings.mHardwareDedicacedTxBufferCount + inSettings.mHardwareTransmitTxFIFOSize ;
+  ptr += txBufferCount * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareTxBufferPayload) ;
+  mEndOfMessageRamPointer = ptr ;
+//------------------------------------------------------ Display Message RAM Allocation
+  const uint32_t requiredSize = mEndOfMessageRamPointer - mMessageRAMPtr ;
+  if (requiredSize > mMessageRamWordSize) {
+    errorCode |= kMessageRamTooSmall ;
+  }
+  if (uint32_t (mEndOfMessageRamPointer) > 0x2000FFFF) {
+    errorCode |= kMessageRamTooSmall ;
+  }
+  if (errorCode == 0) {
+  //------------------------------------------------------ Configure Driver buffers
+    mDriverTransmitFIFO.initWithSize (inSettings.mDriverTransmitFIFOSize) ;
+    mDriverReceiveFIFO0.initWithSize (inSettings.mDriverReceiveFIFO0Size) ;
   //------------------------------------------------------ Interrupts
     uint32_t interruptRegister = CAN_IE_RF0NE ; // Receive FIFO 0 Non Empty
     interruptRegister |= CAN_IE_TCE ; // Enable Transmission Completed Interrupt: page 1141
@@ -226,7 +232,22 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 }
 
 //--------------------------------------------------------------------------------------------------
+
+uint32_t ACANFD_FeatherM4CAN::messageRamRequiredSize (void) {
+  return mEndOfMessageRamPointer - mMessageRAMPtr ;
+}
+
+//--------------------------------------------------------------------------------------------------
 //   RECEPTION
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::availableFD0 (void) {
+  noInterrupts () ;
+    const bool hasMessage = !mDriverReceiveFIFO0.isEmpty () ;
+  interrupts () ;
+  return hasMessage ;
+}
+
 //--------------------------------------------------------------------------------------------------
 
 bool ACANFD_FeatherM4CAN::receiveFD0 (CANFDMessage & outMessage) {
@@ -261,7 +282,9 @@ bool ACANFD_FeatherM4CAN::sendBufferNotFullForIndex (const uint32_t inMessageInd
 uint32_t ACANFD_FeatherM4CAN::tryToSendReturnStatusFD (const CANFDMessage & inMessage) {
   noInterrupts () ;
     uint32_t sendStatus = 0 ;
-    if (inMessage.idx == 0) { // Send via Tx FIFO ?
+    if (inMessage.isValid ()) {
+      sendStatus = kInvalidMessage ;
+    }else if (inMessage.idx == 0) { // Send via Tx FIFO ?
       const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
       const uint32_t hardwareTransmitFifoFreeLevel = txfqs & 0x3F ; // Page 1165
       if ((hardwareTransmitFifoFreeLevel > 0) && mDriverTransmitFIFO.isEmpty ()) {
@@ -437,38 +460,6 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
 ACANFD_FeatherM4CAN::Status::Status (Can * inModulePtr) :
 mErrorCount (uint16_t (inModulePtr->ECR.reg)),
 mProtocolStatus (inModulePtr->PSR.reg) {
-}
-
-//--------------------------------------------------------------------------------------------------
-//  CAN0
-//--------------------------------------------------------------------------------------------------
-
-static uint32_t gMessageRam0 [4352] ;
-
-ACANFD_FeatherM4CAN can0 (ACANFD_FeatherM4CAN_Module::can0, gMessageRam0) ;
-
-//--------------------------------------------------------------------------------------------------
-
-extern "C" void CAN0_Handler (void) ; // SHOULD HAVE C LINKAGE
-
-void CAN0_Handler (void) {
-  can0.interruptServiceRoutine () ;
-}
-
-//--------------------------------------------------------------------------------------------------
-//  CAN1
-//--------------------------------------------------------------------------------------------------
-
-static uint32_t gMessageRam1 [4352] ;
-
-ACANFD_FeatherM4CAN can1 (ACANFD_FeatherM4CAN_Module::can1, gMessageRam1) ;
-
-//--------------------------------------------------------------------------------------------------
-
-extern "C" void CAN1_Handler (void) ; // SHOULD HAVE C LINKAGE
-
-void CAN1_Handler (void) {
-  can1.interruptServiceRoutine () ;
 }
 
 //--------------------------------------------------------------------------------------------------

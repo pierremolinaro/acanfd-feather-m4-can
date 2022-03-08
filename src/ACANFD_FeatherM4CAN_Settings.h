@@ -44,7 +44,7 @@ class ACANFD_FeatherM4CAN_Settings {
 //    Constructor for a given baud rate
 //··································································································
 
-  public: ACANFD_FeatherM4CAN_Settings (const uint32_t inWhishedBitRate,
+  public: ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
                                         const DataBitRateFactor inDataBitRateFactor,
                                         const uint32_t inTolerancePPM = 1000) ;
 
@@ -53,7 +53,7 @@ class ACANFD_FeatherM4CAN_Settings {
 //··································································································
 
 //--- CAN FD bit timing
-  public: const uint32_t mWhishedArbitrationBitRate ; // In kb/s
+  public: const uint32_t mDesiredArbitrationBitRate ; // In bit/s
   public: const DataBitRateFactor mDataBitRateFactor ;
 //--- bitrate prescaler is common to arbitration bitrate and data bitrate
   public: uint8_t mBitRatePrescaler = 32 ; // 1...32
@@ -128,22 +128,21 @@ class ACANFD_FeatherM4CAN_Settings {
 
   public: static const uint32_t kBitRatePrescalerIsZero                       = 1 <<  0 ;
   public: static const uint32_t kBitRatePrescalerIsGreaterThan32              = 1 <<  1 ;
-  public: static const uint32_t kArbitrationPhaseSegment1IsZero               = 1 <<  4 ;
-  public: static const uint32_t kArbitrationPhaseSegment1IsGreaterThan256     = 1 <<  5 ;
-  public: static const uint32_t kArbitrationPhaseSegment2IsLowerThan2         = 1 <<  6 ;
-  public: static const uint32_t kArbitrationPhaseSegment2IsGreaterThan128     = 1 <<  7 ;
-  public: static const uint32_t kArbitrationSJWIsZero                         = 1 <<  8 ;
-  public: static const uint32_t kArbitrationSJWIsGreaterThan128               = 1 <<  9 ;
-  public: static const uint32_t kArbitrationSJWIsGreaterThanPhaseSegment2     = 1 << 10 ;
-  public: static const uint32_t kArbitrationPhaseSegment1Is1AndTripleSampling = 1 << 11 ;
-
-  public: static const uint32_t kDataPhaseSegment1IsZero                      = 1 << 14 ;
-  public: static const uint32_t kDataPhaseSegment1IsGreaterThan32             = 1 << 15 ;
-  public: static const uint32_t kDataPhaseSegment2IsLowerThan2                = 1 << 16 ;
-  public: static const uint32_t kDataPhaseSegment2IsGreaterThan16             = 1 << 17 ;
-  public: static const uint32_t kDataSJWIsZero                                = 1 << 18 ;
-  public: static const uint32_t kDataSJWIsGreaterThan16                       = 1 << 19 ;
-  public: static const uint32_t kDataSJWIsGreaterThanPhaseSegment2            = 1 << 20 ;
+  public: static const uint32_t kArbitrationPhaseSegment1IsZero               = 1 <<  2 ;
+  public: static const uint32_t kArbitrationPhaseSegment1IsGreaterThan256     = 1 <<  3 ;
+  public: static const uint32_t kArbitrationPhaseSegment2IsLowerThan2         = 1 <<  4 ;
+  public: static const uint32_t kArbitrationPhaseSegment2IsGreaterThan128     = 1 <<  5 ;
+  public: static const uint32_t kArbitrationSJWIsZero                         = 1 <<  6 ;
+  public: static const uint32_t kArbitrationSJWIsGreaterThan128               = 1 <<  7 ;
+  public: static const uint32_t kArbitrationSJWIsGreaterThanPhaseSegment2     = 1 <<  8 ;
+  public: static const uint32_t kArbitrationPhaseSegment1Is1AndTripleSampling = 1 <<  9 ;
+  public: static const uint32_t kDataPhaseSegment1IsZero                      = 1 << 10 ;
+  public: static const uint32_t kDataPhaseSegment1IsGreaterThan32             = 1 << 11 ;
+  public: static const uint32_t kDataPhaseSegment2IsLowerThan2                = 1 << 12 ;
+  public: static const uint32_t kDataPhaseSegment2IsGreaterThan16             = 1 << 13 ;
+  public: static const uint32_t kDataSJWIsZero                                = 1 << 14 ;
+  public: static const uint32_t kDataSJWIsGreaterThan16                       = 1 << 15 ;
+  public: static const uint32_t kDataSJWIsGreaterThanPhaseSegment2            = 1 << 16 ;
 
 //··································································································
 

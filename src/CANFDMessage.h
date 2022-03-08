@@ -2,8 +2,6 @@
 // Generic CANFD Message
 // by Pierre Molinaro
 //
-// https://github.com/pierremolinaro/acan2517FD
-//
 //-----------------------------------------------------------------------------
 
 #ifndef GENERIC_CANFD_MESSAGE_DEFINED
