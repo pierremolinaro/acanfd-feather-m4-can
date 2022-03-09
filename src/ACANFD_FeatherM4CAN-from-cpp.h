@@ -28,12 +28,14 @@ class ACANFD_FeatherM4CAN {
 //--- begin; returns a result code :
 //  0 : Ok
 //  other: every bit denotes an error
-   public: static const uint32_t kMessageRamTooSmall                    = 1 << 20 ;
-   public: static const uint32_t kMessageRamNotInFirst64kio             = 1 << 21 ;
-   public: static const uint32_t kHardwareRxFIFO0SizeGreaterThan64      = 1 << 22 ;
-   public: static const uint32_t kHardwareTransmitFIFOSizeGreaterThan32 = 1 << 23 ;
-   public: static const uint32_t kDedicacedTransmitTxBufferCountGreaterThan32 = 1 << 24 ;
-   public: static const uint32_t kTxBufferCountGreaterThan32                  = 1 << 25 ;
+  public: static const uint32_t kMessageRamTooSmall                    = 1 << 20 ;
+  public: static const uint32_t kMessageRamNotInFirst64kio             = 1 << 21 ;
+  public: static const uint32_t kHardwareRxFIFO0SizeGreaterThan64      = 1 << 22 ;
+  public: static const uint32_t kHardwareTransmitFIFOSizeGreaterThan32 = 1 << 23 ;
+  public: static const uint32_t kDedicacedTransmitTxBufferCountGreaterThan30 = 1 << 24 ;
+  public: static const uint32_t kTxBufferCountGreaterThan32         = 1 << 25 ;
+  public: static const uint32_t kHardwareTransmitFIFOSizeLowerThan2 = 1 << 26 ;
+  public: static const uint32_t kHardwareRxFIFO1SizeGreaterThan64      = 1 << 27 ;
 
   public: uint32_t beginFD (const ACANFD_FeatherM4CAN_Settings & inSettings) ;
 
@@ -60,12 +62,19 @@ class ACANFD_FeatherM4CAN {
 //--- Driver Transmit buffer
   private: ACANFD_FeatherM4CAN_FIFO mDriverTransmitFIFO ;
 
-//--- Driver receive FIFO
+//--- Driver receive FIFO 0
   private: ACANFD_FeatherM4CAN_FIFO mDriverReceiveFIFO0 ;
   public: uint32_t driverReceiveFIFO0Size (void) { return mDriverReceiveFIFO0.size () ; }
   public: uint32_t driverReceiveFIFO0Count (void) { return mDriverReceiveFIFO0.count () ; }
   public: uint32_t driverReceiveFIFO0PeakCount (void) { return mDriverReceiveFIFO0.peakCount () ; }
   public: void resetDriverReceiveFIFO0PeakCount (void) { mDriverReceiveFIFO0.resetPeakCount () ; }
+
+//--- Driver receive FIFO 0
+  private: ACANFD_FeatherM4CAN_FIFO mDriverReceiveFIFO1 ;
+  public: uint32_t driverReceiveFIFO1Size (void) { return mDriverReceiveFIFO1.size () ; }
+  public: uint32_t driverReceiveFIFO1Count (void) { return mDriverReceiveFIFO1.count () ; }
+  public: uint32_t driverReceiveFIFO1PeakCount (void) { return mDriverReceiveFIFO1.peakCount () ; }
+  public: void resetDriverReceiveFIFO1PeakCount (void) { mDriverReceiveFIFO1.resetPeakCount () ; }
 
 //--- Private properties
   private: Can * mModulePtr ;
@@ -73,9 +82,11 @@ class ACANFD_FeatherM4CAN {
   public: const uint32_t mMessageRamWordSize ;
   private: uint32_t * mStandardFiltersPointer = nullptr ;
   private: uint32_t * mRxFIFO0Pointer = nullptr ;
+  private: uint32_t * mRxFIFO1Pointer = nullptr ;
   private: uint32_t * mTxBuffersPointer = nullptr ;
   private: uint32_t * mEndOfMessageRamPointer = nullptr ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareRxFIFO0Payload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
+  private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareRxFIFO1Payload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareTxBufferPayload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
   private: ACANFD_FeatherM4CAN_Module mModule ;
 

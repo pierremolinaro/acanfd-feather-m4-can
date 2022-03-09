@@ -72,33 +72,36 @@ class ACANFD_FeatherM4CAN_Settings {
 //--- Module Mode
   public : ModuleMode mModuleMode = NORMAL_FD ;
 
-//--- Driver receive FIFO Size
+//--- Driver receive FIFO Sizes
   public: uint16_t mDriverReceiveFIFO0Size = 10 ;
+  public: uint16_t mDriverReceiveFIFO1Size = 10 ;
 
 //--- Hardware Rx FIFO 0
   public: uint8_t mHardwareRxFIFO0Size = 64 ; // 0 ... 64
   public: Payload mHardwareRxFIFO0Payload = PAYLOAD_64_BYTES ;
 
-//--- Automatic retransmission
-  public: bool mEnableRetransmission = true ;
+//--- Hardware Rx FIFO 1
+  public: uint8_t mHardwareRxFIFO1Size = 0 ; // 0 ... 64
+  public: Payload mHardwareRxFIFO1Payload = PAYLOAD_64_BYTES ;
 
 //--- Remote frame reception
   public: bool mDiscardReceivedStandardRemoteFrames = false ;
   public: bool mDiscardReceivedExtendedRemoteFrames = false ;
 
-//--- Transceiver Delay Compensation
-  public: uint8_t mTransceiverDelayCompensation = 5 ; // 0 ... 127
-
 //--- Driver transmit buffer Size
   public: uint16_t mDriverTransmitFIFOSize = 20 ;
 
-
 //--- Hardware Transmit Buffers
 //    Required: mHardwareTransmitTxFIFOSize + mHardwareDedicacedTxBufferCount <= 32
-  public: uint8_t mHardwareTransmitTxFIFOSize = 24 ; // 0 ... 32
-  public: uint8_t mHardwareDedicacedTxBufferCount = 8 ; // 0 ... 32
+  public: uint8_t mHardwareTransmitTxFIFOSize = 24 ; // 2 ... 32
+  public: uint8_t mHardwareDedicacedTxBufferCount = 8 ; // 0 ... 30
   public: Payload mHardwareTransmitBufferPayload = PAYLOAD_64_BYTES ;
 
+//--- Automatic retransmission
+  public: bool mEnableRetransmission = true ;
+
+//--- Transceiver Delay Compensation
+  public: uint8_t mTransceiverDelayCompensation = 5 ; // 0 ... 127
 
 //··································································································
 // Accessors

@@ -27,11 +27,17 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   if (inSettings.mHardwareRxFIFO0Size > 64) {
     errorCode |= kHardwareRxFIFO0SizeGreaterThan64 ;
   }
+  if (inSettings.mHardwareRxFIFO1Size > 64) {
+    errorCode |= kHardwareRxFIFO1SizeGreaterThan64 ;
+  }
   if (inSettings.mHardwareTransmitTxFIFOSize > 32) {
     errorCode |= kHardwareTransmitFIFOSizeGreaterThan32 ;
   }
-  if (inSettings.mHardwareDedicacedTxBufferCount > 32) {
-    errorCode |= kDedicacedTransmitTxBufferCountGreaterThan32 ;
+  if (inSettings.mHardwareTransmitTxFIFOSize < 2) {
+    errorCode |= kHardwareTransmitFIFOSizeLowerThan2 ;
+  }
+  if (inSettings.mHardwareDedicacedTxBufferCount > 30) {
+    errorCode |= kDedicacedTransmitTxBufferCountGreaterThan30 ;
   }
   if ((inSettings.mHardwareTransmitTxFIFOSize + inSettings.mHardwareDedicacedTxBufferCount) > 32) {
     errorCode |= kTxBufferCountGreaterThan32 ;
@@ -128,15 +134,19 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     (uint32_t (inSettings.mHardwareRxFIFO0Size) << 16) // F0S
   ;
   mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO0Payload) ; // Rx FIFO 0 element size (page 1285)
-  ptr += inSettings.mHardwareRxFIFO0Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (inSettings.mHardwareRxFIFO0Payload) ;
+  ptr += inSettings.mHardwareRxFIFO0Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareRxFIFO0Payload) ;
 //--- Allocate Rx FIFO 1 (0 ... 64 elements -> 0 ... 1152 words)
-  mModulePtr->RXF1C.reg = 0 ; // Page 1159
-//    ptr += 1152 ;
+  mHardwareRxFIFO1Payload = inSettings.mHardwareRxFIFO1Payload ;
+  mModulePtr->RXF1C.reg = // Page 1159
+    (uint32_t (ptr) & 0xFFFFU) // FOSA
+  |
+    (uint32_t (inSettings.mHardwareRxFIFO1Size) << 16) // F0S
+  ;
+  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO1Payload) ; // Rx FIFO 1 element size (page 1285)
+  ptr += inSettings.mHardwareRxFIFO1Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareRxFIFO1Payload) ;
 //--- Allocate Rx Buffers (0 ... 64 elements -> 0 ... 1152 words)
-  mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
-  mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
-//     Serial.print ("RxBuffer ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
-//    ptr += 18 ; // Advance for 18 words
+//   mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
+//   mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
 //--- Allocate Tx Event / FIFO (0 ... 32 elements -> 0 ... 64 words)
 //       EMPTY
 //--- Allocate Tx Buffers (0 ... 32 elements -> 0 ... 576 words)
@@ -165,8 +175,10 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   //------------------------------------------------------ Configure Driver buffers
     mDriverTransmitFIFO.initWithSize (inSettings.mDriverTransmitFIFOSize) ;
     mDriverReceiveFIFO0.initWithSize (inSettings.mDriverReceiveFIFO0Size) ;
+    mDriverReceiveFIFO1.initWithSize (inSettings.mDriverReceiveFIFO1Size) ;
   //------------------------------------------------------ Interrupts
     uint32_t interruptRegister = CAN_IE_RF0NE ; // Receive FIFO 0 Non Empty
+    interruptRegister |= CAN_IE_RF1NE ; // Receive FIFO 1 Non Empty
     interruptRegister |= CAN_IE_TCE ; // Enable Transmission Completed Interrupt: page 1141
     mModulePtr->IE.reg = interruptRegister ;
     mModulePtr->TXBTIE.reg = ~ 0 ;
@@ -218,8 +230,6 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
       break ;
     }
   //------------------------------------------------------ Activate CAN controller
-//     mModulePtr->NDAT1.reg = 0xFFFFFFFF;   /* clear new (rx) data flags */
-//     mModulePtr->NDAT2.reg = 0xFFFFFFFF;   /* clear new (rx) data flags */
     mModulePtr->CCCR.reg = CAN_CCCR_INIT | CAN_CCCR_CCE | cccr ; // Page 1123
     mModulePtr->CCCR.reg = CAN_CCCR_INIT | cccr ; // Page 1123, reset CCE bit
     mModulePtr->CCCR.reg = cccr ; // Page 1123, reset INIT bit
@@ -282,7 +292,7 @@ bool ACANFD_FeatherM4CAN::sendBufferNotFullForIndex (const uint32_t inMessageInd
 uint32_t ACANFD_FeatherM4CAN::tryToSendReturnStatusFD (const CANFDMessage & inMessage) {
   noInterrupts () ;
     uint32_t sendStatus = 0 ;
-    if (inMessage.isValid ()) {
+    if (!inMessage.isValid ()) {
       sendStatus = kInvalidMessage ;
     }else if (inMessage.idx == 0) { // Send via Tx FIFO ?
       const uint32_t txfqs = mModulePtr->TXFQS.reg ; // Page 1165
