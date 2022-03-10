@@ -1,6 +1,8 @@
-// CAN0 external LoopBackDemo for Adafruit Feather M4 CAN Express
+// CAN1 external LoopBackDemo for Adafruit Feather M4 CAN Express
 // No external hardware required.
-// CAN0_TX (PA22, D12) is configured as output and emits CANFD frames
+// You can observe emitted CAN 2.0B and CANFD frames on CANH / CANL pins.
+// Standard frames are received in FIFO0 (default behaviour)
+// Extended frames are received in FIFO1 (by default, extended frames are received in FIFO0)
 //-----------------------------------------------------------------
 
 #ifndef ARDUINO_FEATHER_M4_CAN
@@ -18,31 +20,36 @@
 //   can be freely used for an other function.
 //   The begin method checks if actual size is greater or equal to required size.
 //   Hint: if you do not want to compute required size, print
-//   can0.messageRamRequiredMinimumSize () for getting it.
+//   can1.messageRamRequiredMinimumSize () for getting it.
 
-#define CAN0_MESSAGE_RAM_SIZE (1728)
-#define CAN1_MESSAGE_RAM_SIZE (0)
+#define CAN0_MESSAGE_RAM_SIZE (0)
+#define CAN1_MESSAGE_RAM_SIZE (2880)
 
 #include <ACANFD_FeatherM4CAN.h>
 
 //-----------------------------------------------------------------
 
-static ACANFD_FeatherM4CAN_FIFO gBuffer ;
+static ACANFD_FeatherM4CAN_FIFO gStandardBuffer ;
+static ACANFD_FeatherM4CAN_FIFO gExtendedBuffer ;
 
 //-----------------------------------------------------------------
 
 void setup () {
-  gBuffer.initWithSize (100) ;
+  gStandardBuffer.initWithSize (100) ;
+  gExtendedBuffer.initWithSize (100) ;
   pinMode (LED_BUILTIN, OUTPUT) ;
   Serial.begin (115200) ;
   while (!Serial) {
     delay (50) ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
   }
-  Serial.println ("CAN0 CANFD loopback test") ;
+  Serial.println ("CAN1 CANFD loopback test") ;
   ACANFD_FeatherM4CAN_Settings settings (1000 * 1000, DataBitRateFactor::x8) ;
 
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
+  settings.mNonMatchingExtendedFrameReception = ACANFD_FeatherM4CAN_FilterAction::FIFO1 ;
+  settings.mHardwareRxFIFO1Size = 64 ; // By default, 0
+  settings.mDriverReceiveFIFO1Size = 10 ; // By default, 0
 
   Serial.print ("Bit Rate prescaler: ") ;
   Serial.println (settings.mBitRatePrescaler) ;
@@ -75,13 +82,13 @@ void setup () {
   Serial.print ("Exact Data Bit Rate ? ") ;
   Serial.println (settings.exactDataBitRate () ? "yes" : "no") ;
 
-  const uint32_t errorCode = can0.beginFD (settings) ;
- 
+  const uint32_t errorCode = can1.beginFD (settings) ;
+
   Serial.print ("Message RAM required minimum size: ") ;
-  Serial.print (can0.messageRamRequiredMinimumSize ()) ;
+  Serial.print (can1.messageRamRequiredMinimumSize ()) ;
   Serial.println (" words") ;
 
- if (0 == errorCode) {
+  if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
   }else{
     Serial.print ("Error can configuration: 0x") ;
@@ -145,7 +152,7 @@ void loop () {
 //    1 ... settings.mHardwareDedicacedTxBufferCount: dedicaced buffer
   const uint8_t sendBufferIndex = 0 ;
 //--- Send frame
-  if (gOk && !gBuffer.isFull () && can0.sendBufferNotFullForIndex (sendBufferIndex)) {
+  if (gOk && !gStandardBuffer.isFull () && !gExtendedBuffer.isFull () && can1.sendBufferNotFullForIndex (sendBufferIndex)) {
     CANFDMessage frame ;
     frame.idx = sendBufferIndex ;
     const uint32_t r = pseudoRandomValue () ;
@@ -185,8 +192,12 @@ void loop () {
       }
       break ;  
     }
-    gBuffer.append (frame) ;
-    const uint32_t sendStatus = can0.tryToSendReturnStatusFD (frame) ;
+    if (frame.ext) {
+      gExtendedBuffer.append (frame) ;
+    }else{
+      gStandardBuffer.append (frame) ;
+    }
+    const uint32_t sendStatus = can1.tryToSendReturnStatusFD (frame) ;
     if (sendStatus == 0) {
       gSentCount += 1 ;
     }else{
@@ -195,42 +206,56 @@ void loop () {
       Serial.println (sendStatus, HEX) ;
     }
   }
-//--- Receive frame
+//--- Receive standard frame
   CANFDMessage receivedFrame ;
-  if (gOk && can0.receiveFD0 (receivedFrame)) {
+  if (gOk && can1.receiveFD0 (receivedFrame)) {
     CANFDMessage storedFrame ;
-    gBuffer.remove (storedFrame) ;
-    gReceiveCount += 1 ;
-    bool sameFrames = storedFrame.id == receivedFrame.id ;
-    if (sameFrames) {
-      sameFrames = storedFrame.type == receivedFrame.type ;
-    }
-    if (sameFrames) {
-      sameFrames = storedFrame.len == receivedFrame.len ;
-    }
-    if (storedFrame.type != CANFDMessage::CAN_REMOTE) {
-      for (uint32_t i=0 ; (i<receivedFrame.len) && sameFrames ; i++) {
-        sameFrames = storedFrame.data [i] == receivedFrame.data [i] ;
-      }
-    }
-    if (!sameFrames) {
-      gOk = false ;
-      Serial.println ("Receive error") ;
-      Serial.print ("  IDF: 0x") ;
-      Serial.print (storedFrame.id, HEX) ;
-      Serial.print (" :: 0x") ;
-      Serial.println (receivedFrame.id, HEX) ;
-      Serial.print ("  TYPE: ") ;
-      Serial.print (storedFrame.type) ;
-      Serial.print (" :: ") ;
-      Serial.println (receivedFrame.type) ;
-      Serial.print ("  LENGTH: ") ;
-      Serial.print (storedFrame.len) ;
-      Serial.print (" :: ") ;
-      Serial.println (receivedFrame.len) ;     
-    }
+    gStandardBuffer.remove (storedFrame) ;
+    compareFrames (storedFrame, receivedFrame, 0) ;
+  }
+//--- Receive extended frame
+  if (gOk && can1.receiveFD1 (receivedFrame)) {
+    CANFDMessage storedFrame ;
+    gExtendedBuffer.remove (storedFrame) ;
+    compareFrames (storedFrame, receivedFrame, 1) ;
   }
 }
 
+//-----------------------------------------------------------------
+
+static void compareFrames (const CANFDMessage & inSentFrame,
+                           const CANFDMessage & inReveivedFrame,
+                           const uint32_t inFIFOindex) {
+  gReceiveCount += 1 ;
+  bool sameFrames = inSentFrame.id == inReveivedFrame.id ;
+  if (sameFrames) {
+    sameFrames = inSentFrame.type == inReveivedFrame.type ;
+  }
+  if (sameFrames) {
+    sameFrames = inSentFrame.len == inReveivedFrame.len ;
+  }
+  if (inSentFrame.type != CANFDMessage::CAN_REMOTE) {
+    for (uint32_t i=0 ; (i<inReveivedFrame.len) && sameFrames ; i++) {
+      sameFrames = inSentFrame.data [i] == inReveivedFrame.data [i] ;
+    }
+  }
+  if (!sameFrames) {
+    gOk = false ;
+    Serial.println ("Receive error (FIFO ") ;
+    Serial.println (inFIFOindex) ;
+    Serial.print (")  IDF: 0x") ;
+    Serial.print (inSentFrame.id, HEX) ;
+    Serial.print (" :: 0x") ;
+    Serial.println (inReveivedFrame.id, HEX) ;
+    Serial.print ("  TYPE: ") ;
+    Serial.print (inSentFrame.type) ;
+    Serial.print (" :: ") ;
+    Serial.println (inReveivedFrame.type) ;
+    Serial.print ("  LENGTH: ") ;
+    Serial.print (inSentFrame.len) ;
+    Serial.print (" :: ") ;
+    Serial.println (inReveivedFrame.len) ;     
+  }
+}
 
 //-----------------------------------------------------------------

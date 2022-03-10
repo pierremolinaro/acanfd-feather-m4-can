@@ -21,7 +21,16 @@ mModule (inModule) {
 //    beginFD method
 //--------------------------------------------------------------------------------------------------
 
-uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSettings) {
+uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSettings,
+                                       const ExtendedFilters & inExtendedFilters) {
+  return beginFD (inSettings, ACANFD_FeatherM4CAN::StandardFilters (), inExtendedFilters) ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSettings,
+                                       const StandardFilters & inStandardFilters,
+                                       const ExtendedFilters & inExtendedFilters) {
   uint32_t errorCode = inSettings.CANFDBitSettingConsistency () ;
 //------------------------------------------------------ Check settings
   if (inSettings.mHardwareRxFIFO0Size > 64) {
@@ -41,6 +50,12 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   }
   if ((inSettings.mHardwareTransmitTxFIFOSize + inSettings.mHardwareDedicacedTxBufferCount) > 32) {
     errorCode |= kTxBufferCountGreaterThan32 ;
+  }
+  if (inStandardFilters.count () > 128) {
+    errorCode |= kStandardFilterCountGreaterThan128 ;
+  }
+  if (inExtendedFilters.count () > 128) {
+    errorCode |= kExtendedFilterCountGreaterThan128 ;
   }
 //------------------------------------------------------ Enable CAN Clock (48 MHz)
   switch (mModule) {
@@ -107,6 +122,10 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   mModulePtr->TDCR.reg = uint32_t (inSettings.mTransceiverDelayCompensation) << 8 ; // Page 1134
 //------------------------------------------------------ Global Filter Configuration (page 1148)
   mModulePtr->GFC.reg =
+    (uint32_t (inSettings.mNonMatchingStandardFrameReception) << 4)
+  |
+    (uint32_t (inSettings.mNonMatchingExtendedFrameReception) << 2)
+  |
     (uint32_t (inSettings.mDiscardReceivedStandardRemoteFrames) << 1)
   |
     (uint32_t (inSettings.mDiscardReceivedExtendedRemoteFrames) << 0)
@@ -115,38 +134,49 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 //    mModulePtr->MRCFG.reg = 3 ; // Page 1118
   uint32_t * ptr = mMessageRAMPtr ;
 //--- Allocate Standard ID Filters (0 ... 128 elements -> 0 ... 128 words)
-   mModulePtr->SIDFC.reg = 0 ;
-//       (uint32_t (ptr) & 0xFFFFU) // Standard ID Filter Configuration, page 1269
-//     |
-//       (1U << 16) // One standard filter
-//     ;
-//     *ptr = (2U << 30) | (1U << 27) ; // Page 1149
-//     ptr += 1 ;
+   mModulePtr->SIDFC.reg =
+    (uint32_t (ptr) & 0xFFFFU) // Standard ID Filter Configuration, page 1269
+  |
+    (inStandardFilters.count () << 16) // Standard filter count
+  ;
+  for (uint32_t i=0 ; i<inStandardFilters.count () ; i++) {
+    *ptr = inStandardFilters [i] ; // Page 1149
+    ptr += 1 ;
+  }
 //--- Allocate Extended ID Filters (0 ... 64 elements -> 0 ... 128 words)
-  mModulePtr->XIDFC.reg = 0 ; // Page 1150
+  mModulePtr->XIDFC.reg =
+    (uint32_t (ptr) & 0xFFFFU) // Standard ID Filter Configuration, page 1150
+  |
+    (inExtendedFilters.count () << 16) // Standard filter count
+  ;
+  for (uint32_t i=0 ; i<inExtendedFilters.count () ; i++) {
+    *ptr = inExtendedFilters.firstWordAtIndex (i) ;
+    ptr += 1 ;
+    *ptr = inExtendedFilters.secondWordAtIndex (i) ;
+    ptr += 1 ;
+  }
 //--- Allocate Rx FIFO 0 (0 ... 64 elements -> 0 ... 1152 words)
   mRxFIFO0Pointer = ptr ;
-//     Serial.print ("RxFIFO0 ptr 0x") ; Serial.println (uint32_t (ptr), HEX) ;
   mHardwareRxFIFO0Payload = inSettings.mHardwareRxFIFO0Payload ;
   mModulePtr->RXF0C.reg = // Page 1155
     (uint32_t (ptr) & 0xFFFFU) // FOSA
   |
     (uint32_t (inSettings.mHardwareRxFIFO0Size) << 16) // F0S
   ;
-  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO0Payload) ; // Rx FIFO 0 element size (page 1285)
+  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO0Payload) ; // Rx FIFO 0 element size (page 1162)
   ptr += inSettings.mHardwareRxFIFO0Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareRxFIFO0Payload) ;
 //--- Allocate Rx FIFO 1 (0 ... 64 elements -> 0 ... 1152 words)
+  mRxFIFO1Pointer = ptr ;
   mHardwareRxFIFO1Payload = inSettings.mHardwareRxFIFO1Payload ;
   mModulePtr->RXF1C.reg = // Page 1159
     (uint32_t (ptr) & 0xFFFFU) // FOSA
   |
     (uint32_t (inSettings.mHardwareRxFIFO1Size) << 16) // F0S
   ;
-  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO1Payload) ; // Rx FIFO 1 element size (page 1285)
+  mModulePtr->RXESC.reg |= uint32_t (inSettings.mHardwareRxFIFO1Payload) << 4 ; // Rx FIFO 1 element size (page 1162)
   ptr += inSettings.mHardwareRxFIFO1Size * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareRxFIFO1Payload) ;
 //--- Allocate Rx Buffers (0 ... 64 elements -> 0 ... 1152 words)
-//   mModulePtr->RXESC.reg |= 7 << 8 ; // Reserve memory for 64 byte data field (page 1162)
-//   mModulePtr->RXBC.reg = uint32_t (ptr) ; // Rx Buffer start address, page 1158
+//       EMPTY
 //--- Allocate Tx Event / FIFO (0 ... 32 elements -> 0 ... 64 words)
 //       EMPTY
 //--- Allocate Tx Buffers (0 ... 32 elements -> 0 ... 576 words)
@@ -243,7 +273,7 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
 
 //--------------------------------------------------------------------------------------------------
 
-uint32_t ACANFD_FeatherM4CAN::messageRamRequiredSize (void) {
+uint32_t ACANFD_FeatherM4CAN::messageRamRequiredMinimumSize (void) {
   return mEndOfMessageRamPointer - mMessageRAMPtr ;
 }
 
@@ -263,6 +293,24 @@ bool ACANFD_FeatherM4CAN::availableFD0 (void) {
 bool ACANFD_FeatherM4CAN::receiveFD0 (CANFDMessage & outMessage) {
   noInterrupts () ;
     const bool hasMessage = mDriverReceiveFIFO0.remove (outMessage) ;
+  interrupts () ;
+  return hasMessage ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::availableFD1 (void) {
+  noInterrupts () ;
+    const bool hasMessage = !mDriverReceiveFIFO1.isEmpty () ;
+  interrupts () ;
+  return hasMessage ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::receiveFD1 (CANFDMessage & outMessage) {
+  noInterrupts () ;
+    const bool hasMessage = mDriverReceiveFIFO1.remove (outMessage) ;
   interrupts () ;
   return hasMessage ;
 }
@@ -443,6 +491,21 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
       mModulePtr->IR.reg = CAN_IR_RF0N ;
     //--- Enter message into driver receive buffer 0
       mDriverReceiveFIFO0.append (message) ;
+    }else if ((it & CAN_IR_RF1N) != 0) { // Receive FIFO 1 Non Empty
+      CANFDMessage message ;
+    //--- Get read index
+      const uint32_t readIndex = (mModulePtr->RXF1S.reg >> 8) & 0x3F ;
+    //--- Compute message RAM address
+      uint32_t * address = mRxFIFO1Pointer ;
+      address += readIndex * ACANFD_FeatherM4CAN_Settings::wordCountForPayload (mHardwareRxFIFO1Payload) ;
+    //--- Get message
+      getMessageFrom (address, mHardwareRxFIFO1Payload, message) ;
+    //--- Clear receive flag
+      mModulePtr->RXF1A.reg = readIndex ;
+    //--- Interrupt Acknowledge
+      mModulePtr->IR.reg = CAN_IR_RF1N ;
+    //--- Enter message into driver receive buffer 1
+      mDriverReceiveFIFO1.append (message) ;
     }else if ((it & CAN_IR_TC) != 0) {
     //--- Interrupt Acknowledge
       mModulePtr->IR.reg = CAN_IR_TC ;
@@ -470,6 +533,131 @@ void ACANFD_FeatherM4CAN::interruptServiceRoutine (void) {
 ACANFD_FeatherM4CAN::Status::Status (Can * inModulePtr) :
 mErrorCount (uint16_t (inModulePtr->ECR.reg)),
 mProtocolStatus (inModulePtr->PSR.reg) {
+}
+
+//--------------------------------------------------------------------------------------------------
+//    Standard filters
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::StandardFilters::addDual (const uint16_t inIdentifier1,
+                                                    const uint16_t inIdentifier2,
+                                                    const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier1 <= 0x7FF) && (inIdentifier2 <= 0x7FF) ;
+  if (ok) {
+    uint32_t filter = inIdentifier2 ;
+    filter |= uint32_t (inIdentifier1) << 16 ;
+    filter |= (1U << 30) ; // Dual filter (page 1182)
+    filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;
+  }
+  return ok ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::StandardFilters::addSingle (const uint16_t inIdentifier,
+                                                      const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  return addDual (inIdentifier, inIdentifier, inAction) ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::StandardFilters::addRange (const uint16_t inIdentifier1,
+                                                     const uint16_t inIdentifier2,
+                                                     const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier1 <= inIdentifier2) && (inIdentifier2 <= 0x7FF) ;
+  if (ok) {
+    uint32_t filter = inIdentifier2 ;
+    filter |= uint32_t (inIdentifier1) << 16 ;
+    filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;  // Filter type is 0 (RANGE, page 1182)
+  }
+  return ok ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::StandardFilters::addClassic (const uint16_t inIdentifier,
+                                                       const uint16_t inMask,
+                                                       const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier <= 0x7FF)
+               && (inMask <= 0x7FF)
+               && ((inIdentifier & inMask) == inIdentifier) ;
+  if (ok) {
+    uint32_t filter = inMask ;
+    filter |= uint32_t (inIdentifier) << 16 ;
+    filter |= (2U << 30) ; // Classic filter (page 1182)
+    filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;
+  }
+  return ok ;
+}
+
+//--------------------------------------------------------------------------------------------------
+//    Extended filters
+//--------------------------------------------------------------------------------------------------
+
+static const uint32_t MAX_EXTENDED_IDENTIFIER = 0x1FFFFFFF ;
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::ExtendedFilters::addDual (const uint32_t inIdentifier1,
+                                                    const uint32_t inIdentifier2,
+                                                    const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier1 <= MAX_EXTENDED_IDENTIFIER)
+               && (inIdentifier2 <= MAX_EXTENDED_IDENTIFIER) ;
+  if (ok) {
+    uint32_t filter = inIdentifier1 ;
+    filter |= ((uint32_t (inAction) + 1) << 29) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;
+    filter = inIdentifier2 ;
+    filter |= (1U << 30) ; // Dual filter (page 1182)
+    mFilterArray.append (filter) ;
+  }
+  return ok ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::ExtendedFilters::addSingle (const uint32_t inIdentifier,
+                                                      const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  return addDual (inIdentifier, inIdentifier, inAction) ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::ExtendedFilters::addRange (const uint32_t inIdentifier1,
+                                                     const uint32_t inIdentifier2,
+                                                     const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier1 <= inIdentifier2)
+               && (inIdentifier2 <= MAX_EXTENDED_IDENTIFIER) ;
+  if (ok) {
+    uint32_t filter = inIdentifier1 ; // Filter type is 0 (RANGE, page 1182)
+    filter |= ((uint32_t (inAction) + 1) << 29) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;
+    filter = inIdentifier2 ;
+    mFilterArray.append (filter) ;  // Filter type is 0 (RANGE, page 1182)
+  }
+  return ok ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::ExtendedFilters::addClassic (const uint32_t inIdentifier,
+                                                       const uint32_t inMask,
+                                                       const ACANFD_FeatherM4CAN_FilterAction inAction) {
+  const bool ok = (inIdentifier <= MAX_EXTENDED_IDENTIFIER)
+               && (inMask <= MAX_EXTENDED_IDENTIFIER)
+               && ((inIdentifier & inMask) == inIdentifier) ;
+  if (ok) {
+    uint32_t filter = inIdentifier ;
+    filter |= ((uint32_t (inAction) + 1) << 29) ; // Filter action (page 1182)
+    mFilterArray.append (filter) ;
+    filter = inMask ;
+    filter |= (2U << 30) ; // Classic filter (page 1182)
+    mFilterArray.append (filter) ;
+  }
+  return ok ;
 }
 
 //--------------------------------------------------------------------------------------------------

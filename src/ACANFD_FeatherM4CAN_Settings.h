@@ -6,6 +6,14 @@
 
 #include <ACANFD_DataBitRateFactor.h>
 
+//··································································································
+
+enum class ACANFD_FeatherM4CAN_FilterAction {
+  FIFO0 = 0,
+  FIFO1 = 1,
+  REJECT = 2
+} ;
+
 //--------------------------------------------------------------------------------------------------
 
 class ACANFD_FeatherM4CAN_Settings {
@@ -74,7 +82,7 @@ class ACANFD_FeatherM4CAN_Settings {
 
 //--- Driver receive FIFO Sizes
   public: uint16_t mDriverReceiveFIFO0Size = 10 ;
-  public: uint16_t mDriverReceiveFIFO1Size = 10 ;
+  public: uint16_t mDriverReceiveFIFO1Size = 0 ;
 
 //--- Hardware Rx FIFO 0
   public: uint8_t mHardwareRxFIFO0Size = 64 ; // 0 ... 64
@@ -87,6 +95,10 @@ class ACANFD_FeatherM4CAN_Settings {
 //--- Remote frame reception
   public: bool mDiscardReceivedStandardRemoteFrames = false ;
   public: bool mDiscardReceivedExtendedRemoteFrames = false ;
+
+//-- Accept non matching frames ?
+  public: ACANFD_FeatherM4CAN_FilterAction mNonMatchingStandardFrameReception = ACANFD_FeatherM4CAN_FilterAction::FIFO0 ;
+  public: ACANFD_FeatherM4CAN_FilterAction mNonMatchingExtendedFrameReception = ACANFD_FeatherM4CAN_FilterAction::FIFO0 ;
 
 //--- Driver transmit buffer Size
   public: uint16_t mDriverTransmitFIFOSize = 20 ;

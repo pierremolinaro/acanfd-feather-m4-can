@@ -13,10 +13,12 @@
 //   From an other file, include <ACANFD_FeatherM4CAN-from-cpp.h>
 //   Before including <ACANFD_FeatherM4CAN.h>, you should define 
 //   Message RAM size for CAN0 and Message RAM size for CAN1.
-//   Maximum size is 4,352 (4,352 32-bit words).
+//   Maximum required size is 4,352 (4,352 32-bit words).
 //   A 0 size means the CAN module is not configured; its TxCAN and RxCAN pins
 //   can be freely used for an other function.
 //   The begin method checks if actual size is greater or equal to required size.
+//   Hint: if you do not want to compute required size, print
+//   can1.messageRamRequiredMinimumSize () for getting it.
 
 #define CAN0_MESSAGE_RAM_SIZE (0)
 #define CAN1_MESSAGE_RAM_SIZE (1728)
@@ -69,7 +71,12 @@ void setup () {
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
   
   const uint32_t errorCode = can1.beginFD (settings) ;
-  if (0 == errorCode) {
+
+  Serial.print ("Message RAM required minimum size: ") ;
+  Serial.print (can1.messageRamRequiredMinimumSize ()) ;
+  Serial.println (" words") ;
+
+if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
   }else{
     Serial.print ("Error can configuration: 0x") ;

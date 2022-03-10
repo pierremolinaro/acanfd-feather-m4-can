@@ -1,6 +1,7 @@
-// CAN0 external LoopBackDemo for Adafruit Feather M4 CAN Express
+// CAN1 external LoopBackDemo for Adafruit Feather M4 CAN Express
 // No external hardware required.
-// CAN0_TX (PA22, D12) is configured as output and emits CAN 2.0B frames
+// You can observe emitted CANFD frames on CANH / CANL pins.
+// This sketch is an example of standard filters.
 //-----------------------------------------------------------------
 
 #ifndef ARDUINO_FEATHER_M4_CAN
@@ -18,10 +19,10 @@
 //   can be freely used for an other function.
 //   The begin method checks if actual size is greater or equal to required size.
 //   Hint: if you do not want to compute required size, print
-//   can0.messageRamRequiredMinimumSize () for getting it.
+//   can1.messageRamRequiredMinimumSize () for getting it.
 
-#define CAN0_MESSAGE_RAM_SIZE (1728)
-#define CAN1_MESSAGE_RAM_SIZE (0)
+#define CAN0_MESSAGE_RAM_SIZE (0)
+#define CAN1_MESSAGE_RAM_SIZE (1912)
 
 #include <ACANFD_FeatherM4CAN.h>
 
@@ -34,8 +35,8 @@ void setup () {
     delay (50) ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
   }
-  Serial.println ("CAN0 loopback test") ;
-  ACANFD_FeatherM4CAN_Settings settings (125 * 1000, DataBitRateFactor::x1) ;
+  Serial.println ("CAN1 CANFD loopback test") ;
+  ACANFD_FeatherM4CAN_Settings settings (1000 * 1000, DataBitRateFactor::x2) ;
 
   Serial.print ("Bit Rate prescaler: ") ;
   Serial.println (settings.mBitRatePrescaler) ;
@@ -69,14 +70,31 @@ void setup () {
   Serial.println (settings.exactDataBitRate () ? "yes" : "no") ;
 
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
-  
-  const uint32_t errorCode = can0.beginFD (settings) ;
- 
+
+  ACANFD_FeatherM4CAN::StandardFilters standardFilters ;
+//--- Add classic filter: identifier and mask (8 matching identifiers)
+  standardFilters.addClassic (0x405, 0x7D5, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+//--- Add range filter: low bound, high bound (36 matching identifiers)
+  standardFilters.addRange (0x100, 0x123, ACANFD_FeatherM4CAN_FilterAction::FIFO1) ;
+//--- Add dual filter: identifier1, identifier2 (2 matching identifiers)
+  standardFilters.addDual (0x033, 0x44, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+//--- Add single filter: identifier (1 matching identifier)
+  standardFilters.addSingle (0x055, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+
+//--- Reject standard frames that do not match any filter
+  settings.mNonMatchingStandardFrameReception = ACANFD_FeatherM4CAN_FilterAction::REJECT ;
+
+//--- Allocate FIFO 1
+  settings.mHardwareRxFIFO1Size = 10 ; // By default, 0
+  settings.mDriverReceiveFIFO1Size = 10 ; // By default, 0
+
+  const uint32_t errorCode = can1.beginFD (settings, standardFilters) ;
+
   Serial.print ("Message RAM required minimum size: ") ;
-  Serial.print (can0.messageRamRequiredMinimumSize ()) ;
+  Serial.print (can1.messageRamRequiredMinimumSize ()) ;
   Serial.println (" words") ;
 
-if (0 == errorCode) {
+  if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
   }else{
     Serial.print ("Error can configuration: 0x") ;
@@ -88,44 +106,41 @@ if (0 == errorCode) {
 
 static const uint32_t PERIOD = 1000 ;
 static uint32_t gBlinkDate = PERIOD ;
-static uint32_t gSentCount = 0 ;
-static uint32_t gReceiveCount = 0 ;
+static uint32_t gSentIdentifier = 0 ;
+static uint32_t gReceiveCountFIFO0 = 0 ;
+static uint32_t gReceiveCountFIFO1 = 0 ;
+static bool gOk = true ;
 
 //-----------------------------------------------------------------
 
 void loop () {
-  if (gBlinkDate <= millis ()) {
-    gBlinkDate += PERIOD ;
-    digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
-    CANMessage frame ;
-    frame.id = 0x7FF ;
- //   frame.ext = true ;
-//    frame.rtr = true ;
-    frame.len = 8 ;
-    frame.data [0] = 0x11 ;
-    frame.data [1] = 0x22 ;
-    frame.data [2] = 0x33 ;
-    frame.data [3] = 0x44 ;
-    frame.data [4] = 0x55 ;
-    frame.data [5] = 0x66 ;
-    frame.data [6] = 0x77 ;
-    frame.data [7] = 0x88 ;
-    const uint32_t sendStatus = can0.tryToSendReturnStatusFD (frame) ;
-    if (sendStatus == 0) {
-      gSentCount += 1 ;
-      Serial.print ("Sent ") ;
-      Serial.println (gSentCount) ;
-    }else{
+  if (gOk && (gSentIdentifier <= 0x7FF) && can1.sendBufferNotFullForIndex (0)) {
+    CANFDMessage frame ;
+    frame.id = gSentIdentifier ;
+    gSentIdentifier += 1 ;
+    const uint32_t sendStatus = can1.tryToSendReturnStatusFD (frame) ;
+    if (sendStatus != 0) {
+      gOk = false ;
       Serial.print ("Sent error 0x") ;
-      Serial.println (sendStatus) ;    
-    }
+      Serial.println (sendStatus) ;
+    } 
   }
 //--- Receive frame
   CANFDMessage frame ;
-  if (can0.receiveFD0 (frame)) {
-    gReceiveCount += 1 ;
-    Serial.print ("Received ") ;
-    Serial.println (gReceiveCount) ;
+  if (gOk && can1.receiveFD0 (frame)) {
+    gReceiveCountFIFO0 += 1 ;
+  }
+  if (gOk && can1.receiveFD1 (frame)) {
+    gReceiveCountFIFO1 += 1 ;
+  }
+//--- Blink led and display
+  if (gBlinkDate <= millis ()) {
+    gBlinkDate += PERIOD ;
+    digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
+    Serial.print ("Received FIFO0: ") ;
+    Serial.print (gReceiveCountFIFO0) ;
+    Serial.print (", FIFO1: ") ;
+    Serial.println (gReceiveCountFIFO1) ;
   }
 }
 
