@@ -50,8 +50,8 @@ void setup () {
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
 
   const uint32_t errorCode = can1.beginFD (settings) ;
-  Serial.print ("Message RAM Minimum required size: ") ;
-  Serial.print (can1.messageRamRequiredSize ()) ;
+  Serial.print ("Message RAM required minimum size: ") ;
+  Serial.print (can1.messageRamRequiredMinimumSize ()) ;
   Serial.println (" words") ;
   if (0 == errorCode) {
     Serial.println ("can configuration ok") ;
