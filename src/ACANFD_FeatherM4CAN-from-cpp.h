@@ -34,9 +34,9 @@ class ACANFD_FeatherM4CAN {
 
   //--- Append
     public: void append (const T & inObject) {
-      if (mSize == mCount) {
-        mSize += 64 ;
-        T * newArray = new T [mSize] ;
+      if (mCapacity == mCount) {
+        mCapacity += 64 ;
+        T * newArray = new T [mCapacity] ;
         for (uint32_t i=0 ; i<mCount ; i++) {
           newArray [i] = mArray [i] ;
         }
@@ -47,12 +47,32 @@ class ACANFD_FeatherM4CAN {
       mCount += 1 ;
     }
 
+  //--- Methods
+    public: void release (void) {
+      delete [] mArray ;
+      mArray = nullptr ;
+      mCount = 0 ;
+      mCapacity = 0 ;
+    }
+
+    public: void setCapacity (const uint32_t inNewCapacity) {
+      if (mCapacity < inNewCapacity) {
+        mCapacity = inNewCapacity ;
+        T * newArray = new T [mCapacity] ;
+        for (uint32_t i=0 ; i<mCount ; i++) {
+          newArray [i] = mArray [i] ;
+        }
+        delete [] mArray ;
+        mArray = newArray ;
+      }
+    }
+
   //--- Access
     public: uint32_t count () const { return mCount ; }
     public: T operator [] (const uint32_t inIndex) const { return mArray [inIndex] ; }
 
   //--- Private properties
-    private: uint8_t mSize = 0 ;
+    private: uint8_t mCapacity = 0 ;
     private: uint8_t mCount = 0 ;
     private: T * mArray = nullptr ;
 
@@ -71,23 +91,34 @@ class ACANFD_FeatherM4CAN {
 
   //--- Append filter
     public: bool addSingle (const uint16_t inIdentifier,
-                            const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                            const ACANFD_FeatherM4CAN_FilterAction inAction,
+                            const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addDual (const uint16_t inIdentifier1,
                           const uint16_t inIdentifier2,
-                          const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                          const ACANFD_FeatherM4CAN_FilterAction inAction,
+                          const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addRange (const uint16_t inIdentifier1,
                            const uint16_t inIdentifier2,
-                           const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                           const ACANFD_FeatherM4CAN_FilterAction inAction,
+                           const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addClassic (const uint16_t inIdentifier,
                              const uint16_t inMask,
-                             const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                             const ACANFD_FeatherM4CAN_FilterAction inAction,
+                             const ACANFDCallBackRoutine inCallBack = nullptr) ;
 
   //--- Access
     public: uint32_t count () const { return mFilterArray.count () ; }
-    public: uint32_t operator [] (const uint32_t inIndex) const { return mFilterArray [inIndex] ; }
+    public: uint32_t filterAtIndex (const uint32_t inIndex) const { return mFilterArray [inIndex] ; }
+    public: ACANFDCallBackRoutine callBackAtIndex (const uint32_t inIndex) const {
+      return mCallBackArray [inIndex] ;
+    }
 
   //--- Private properties
     private: DynamicArray <uint32_t> mFilterArray ;
+    private: DynamicArray < ACANFDCallBackRoutine > mCallBackArray ;
 
   //--- No copy
     private : StandardFilters (const StandardFilters &) = delete ;
@@ -104,24 +135,35 @@ class ACANFD_FeatherM4CAN {
 
   //--- Append filter
     public: bool addSingle (const uint32_t inExtendedIdentifier,
-                            const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                            const ACANFD_FeatherM4CAN_FilterAction inAction,
+                            const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addDual (const uint32_t inExtendedIdentifier1,
                           const uint32_t inExtendedIdentifier2,
-                          const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                          const ACANFD_FeatherM4CAN_FilterAction inAction,
+                          const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addRange (const uint32_t inExtendedIdentifier1,
                            const uint32_t inExtendedIdentifier2,
-                           const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                           const ACANFD_FeatherM4CAN_FilterAction inAction,
+                           const ACANFDCallBackRoutine inCallBack = nullptr) ;
+
     public: bool addClassic (const uint32_t inExtendedIdentifier,
                              const uint32_t inExtendedMask,
-                             const ACANFD_FeatherM4CAN_FilterAction inAction) ;
+                             const ACANFD_FeatherM4CAN_FilterAction inAction,
+                             const ACANFDCallBackRoutine inCallBack = nullptr) ;
 
   //--- Access
-    public: uint32_t count () const { return mFilterArray.count () / 2 ; }
+    public: uint32_t count () const { return mCallBackArray.count () ; }
     public: uint32_t firstWordAtIndex (const uint32_t inIndex) const { return mFilterArray [inIndex * 2] ; }
     public: uint32_t secondWordAtIndex (const uint32_t inIndex) const { return mFilterArray [inIndex * 2 + 1] ; }
+    public: ACANFDCallBackRoutine callBackAtIndex (const uint32_t inIndex) const {
+      return mCallBackArray [inIndex] ;
+    }
 
   //--- Private properties
     private: DynamicArray <uint32_t> mFilterArray ;
+    private: DynamicArray < void (*) (const CANFDMessage & inMessage) > mCallBackArray ;
 
   //--- No copy
     private : ExtendedFilters (const ExtendedFilters &) = delete ;
@@ -175,10 +217,13 @@ class ACANFD_FeatherM4CAN {
   public: inline uint32_t transmitFIFOPeakCount (void) const { return mDriverTransmitFIFO.peakCount () ; }
 
 //--- Receiving messages
-   public: bool availableFD0 (void) ;
-   public: bool receiveFD0 (CANFDMessage & outMessage) ;
-   public: bool availableFD1 (void) ;
-   public: bool receiveFD1 (CANFDMessage & outMessage) ;
+  public: bool availableFD0 (void) ;
+  public: bool receiveFD0 (CANFDMessage & outMessage) ;
+  public: bool availableFD1 (void) ;
+  public: bool receiveFD1 (CANFDMessage & outMessage) ;
+  public: bool dispatchReceivedMessage (void) ;
+  public: bool dispatchReceivedMessageFIFO0 (void) ;
+  public: bool dispatchReceivedMessageFIFO1 (void) ;
 
 //--- Driver Transmit buffer
   private: ACANFD_FeatherM4CAN_FIFO mDriverTransmitFIFO ;
@@ -201,11 +246,14 @@ class ACANFD_FeatherM4CAN {
   private: Can * mModulePtr ;
   private: uint32_t * mMessageRAMPtr ;
   public: const uint32_t mMessageRamWordSize ;
-  private: uint32_t * mStandardFiltersPointer = nullptr ;
   private: uint32_t * mRxFIFO0Pointer = nullptr ;
   private: uint32_t * mRxFIFO1Pointer = nullptr ;
   private: uint32_t * mTxBuffersPointer = nullptr ;
   private: uint32_t * mEndOfMessageRamPointer = nullptr ;
+  private: DynamicArray < ACANFDCallBackRoutine > mStandardFilterCallBackArray ;
+  private: DynamicArray < ACANFDCallBackRoutine > mExtendedFilterCallBackArray ;
+  private: ACANFDCallBackRoutine mNonMatchingStandardMessageCallBack = nullptr ;
+  private: ACANFDCallBackRoutine mNonMatchingExtendedMessageCallBack = nullptr ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareRxFIFO0Payload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareRxFIFO1Payload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
   private: ACANFD_FeatherM4CAN_Settings::Payload mHardwareTxBufferPayload = ACANFD_FeatherM4CAN_Settings::PAYLOAD_64_BYTES ;
@@ -214,6 +262,7 @@ class ACANFD_FeatherM4CAN {
 //--- Private methods
   public: void interruptServiceRoutine (void) ;
   private: void writeTxBuffer (const CANFDMessage & inMessage, const uint32_t inTxBufferIndex) ;
+  private: void internalDispatchReceivedMessage (const CANFDMessage & inMessage) ;
 
 //--- Status class
   public: class Status {

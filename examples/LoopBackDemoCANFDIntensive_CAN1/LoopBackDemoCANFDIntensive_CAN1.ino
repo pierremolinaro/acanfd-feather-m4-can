@@ -91,7 +91,6 @@ void setup () {
 
 //-----------------------------------------------------------------
 
-
 static uint32_t pseudoRandomValue (void) {
   static uint32_t gSeed = 0 ;
   gSeed = 8253729U * gSeed + 2396403U ;

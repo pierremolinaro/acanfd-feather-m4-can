@@ -6,6 +6,8 @@
 
 #include <ACANFD_DataBitRateFactor.h>
 
+class CANFDMessage ;
+
 //··································································································
 
 enum class ACANFD_FeatherM4CAN_FilterAction {
@@ -99,6 +101,8 @@ class ACANFD_FeatherM4CAN_Settings {
 //-- Accept non matching frames ?
   public: ACANFD_FeatherM4CAN_FilterAction mNonMatchingStandardFrameReception = ACANFD_FeatherM4CAN_FilterAction::FIFO0 ;
   public: ACANFD_FeatherM4CAN_FilterAction mNonMatchingExtendedFrameReception = ACANFD_FeatherM4CAN_FilterAction::FIFO0 ;
+  public: void (*mNonMatchingStandardMessageCallBack) (const CANFDMessage & inMessage) = nullptr ;
+  public: void (*mNonMatchingExtendedMessageCallBack) (const CANFDMessage & inMessage) = nullptr ;
 
 //--- Driver transmit buffer Size
   public: uint16_t mDriverTransmitFIFOSize = 20 ;

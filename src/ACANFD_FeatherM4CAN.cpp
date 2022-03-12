@@ -139,9 +139,11 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   |
     (inStandardFilters.count () << 16) // Standard filter count
   ;
+  mStandardFilterCallBackArray.setCapacity (inStandardFilters.count ()) ;
   for (uint32_t i=0 ; i<inStandardFilters.count () ; i++) {
-    *ptr = inStandardFilters [i] ; // Page 1149
+    *ptr = inStandardFilters.filterAtIndex (i) ; // Page 1149
     ptr += 1 ;
+    mStandardFilterCallBackArray.append (inStandardFilters.callBackAtIndex (i)) ;
   }
 //--- Allocate Extended ID Filters (0 ... 64 elements -> 0 ... 128 words)
   mModulePtr->XIDFC.reg =
@@ -149,11 +151,13 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
   |
     (inExtendedFilters.count () << 16) // Standard filter count
   ;
+  mExtendedFilterCallBackArray.setCapacity (inExtendedFilters.count ()) ;
   for (uint32_t i=0 ; i<inExtendedFilters.count () ; i++) {
     *ptr = inExtendedFilters.firstWordAtIndex (i) ;
     ptr += 1 ;
     *ptr = inExtendedFilters.secondWordAtIndex (i) ;
     ptr += 1 ;
+    mExtendedFilterCallBackArray.append (inExtendedFilters.callBackAtIndex (i)) ;
   }
 //--- Allocate Rx FIFO 0 (0 ... 64 elements -> 0 ... 1152 words)
   mRxFIFO0Pointer = ptr ;
@@ -206,6 +210,8 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     mDriverTransmitFIFO.initWithSize (inSettings.mDriverTransmitFIFOSize) ;
     mDriverReceiveFIFO0.initWithSize (inSettings.mDriverReceiveFIFO0Size) ;
     mDriverReceiveFIFO1.initWithSize (inSettings.mDriverReceiveFIFO1Size) ;
+    mNonMatchingStandardMessageCallBack = inSettings.mNonMatchingStandardMessageCallBack ;
+    mNonMatchingExtendedMessageCallBack = inSettings.mNonMatchingExtendedMessageCallBack ;
   //------------------------------------------------------ Interrupts
     uint32_t interruptRegister = CAN_IE_RF0NE ; // Receive FIFO 0 Non Empty
     interruptRegister |= CAN_IE_RF1NE ; // Receive FIFO 1 Non Empty
@@ -313,6 +319,67 @@ bool ACANFD_FeatherM4CAN::receiveFD1 (CANFDMessage & outMessage) {
     const bool hasMessage = mDriverReceiveFIFO1.remove (outMessage) ;
   interrupts () ;
   return hasMessage ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::dispatchReceivedMessage (void) {
+  CANFDMessage message ;
+  bool result = false ;
+  if (receiveFD0 (message)) {
+    result = true ;
+    internalDispatchReceivedMessage (message) ;
+  }
+  if (receiveFD1 (message)) {
+    result = true ;
+    internalDispatchReceivedMessage (message) ;
+  }
+  return result ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::dispatchReceivedMessageFIFO0 (void) {
+  CANFDMessage message ;
+  const bool result = receiveFD0 (message) ;
+  if (result) {
+    internalDispatchReceivedMessage (message) ;
+  }
+  return result ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool ACANFD_FeatherM4CAN::dispatchReceivedMessageFIFO1 (void) {
+  CANFDMessage message ;
+  const bool result = receiveFD1 (message) ;
+  if (result) {
+    internalDispatchReceivedMessage (message) ;
+  }
+  return result ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void ACANFD_FeatherM4CAN::internalDispatchReceivedMessage (const CANFDMessage & inMessage) {
+  const uint32_t filterIndex = inMessage.idx ;
+  ACANFDCallBackRoutine callBack = nullptr ;
+  if (inMessage.ext) {
+    if (filterIndex == 255) {
+      callBack = mNonMatchingStandardMessageCallBack ;
+    }else if (filterIndex < mExtendedFilterCallBackArray.count ()) {
+      callBack = mExtendedFilterCallBackArray [filterIndex] ;
+    }
+  }else{ // Standard message
+    if (filterIndex == 255) {
+      callBack = mNonMatchingExtendedMessageCallBack ;
+    }else if (filterIndex < mStandardFilterCallBackArray.count ()) {
+      callBack = mStandardFilterCallBackArray [filterIndex] ;
+    }
+  }
+  if (callBack != nullptr) {
+    callBack (inMessage) ;
+  }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -461,6 +528,13 @@ static void getMessageFrom (uint32_t * inMessageRamAddress,
   }else{
     outMessage.type = CANFDMessage::CAN_DATA ;
   }
+//--- Filter index
+  if ((w1 & (1U << 31)) != 0) { // Filter index available ? Page 1177-1178
+    outMessage.idx = 255 ; // Not available
+  }else{
+    const uint32_t filterIndex = (w1 >> 24) & 0x7F ;
+    outMessage.idx = uint8_t (filterIndex) ;
+  }
 //--- Get data
   if (outMessage.type != CANFDMessage::CAN_REMOTE) {
     const uint32_t wc = (outMessage.len + 3) / 4 ;
@@ -539,9 +613,18 @@ mProtocolStatus (inModulePtr->PSR.reg) {
 //    Standard filters
 //--------------------------------------------------------------------------------------------------
 
+bool ACANFD_FeatherM4CAN::StandardFilters::addSingle (const uint16_t inIdentifier,
+                                                      const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                      const ACANFDCallBackRoutine inCallBack) {
+  return addDual (inIdentifier, inIdentifier, inAction, inCallBack) ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 bool ACANFD_FeatherM4CAN::StandardFilters::addDual (const uint16_t inIdentifier1,
                                                     const uint16_t inIdentifier2,
-                                                    const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                    const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                    const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier1 <= 0x7FF) && (inIdentifier2 <= 0x7FF) ;
   if (ok) {
     uint32_t filter = inIdentifier2 ;
@@ -549,28 +632,24 @@ bool ACANFD_FeatherM4CAN::StandardFilters::addDual (const uint16_t inIdentifier1
     filter |= (1U << 30) ; // Dual filter (page 1182)
     filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
     mFilterArray.append (filter) ;
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-bool ACANFD_FeatherM4CAN::StandardFilters::addSingle (const uint16_t inIdentifier,
-                                                      const ACANFD_FeatherM4CAN_FilterAction inAction) {
-  return addDual (inIdentifier, inIdentifier, inAction) ;
-}
-
-//--------------------------------------------------------------------------------------------------
-
 bool ACANFD_FeatherM4CAN::StandardFilters::addRange (const uint16_t inIdentifier1,
                                                      const uint16_t inIdentifier2,
-                                                     const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                     const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                     const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier1 <= inIdentifier2) && (inIdentifier2 <= 0x7FF) ;
   if (ok) {
     uint32_t filter = inIdentifier2 ;
     filter |= uint32_t (inIdentifier1) << 16 ;
     filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
     mFilterArray.append (filter) ;  // Filter type is 0 (RANGE, page 1182)
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }
@@ -579,7 +658,8 @@ bool ACANFD_FeatherM4CAN::StandardFilters::addRange (const uint16_t inIdentifier
 
 bool ACANFD_FeatherM4CAN::StandardFilters::addClassic (const uint16_t inIdentifier,
                                                        const uint16_t inMask,
-                                                       const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                       const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                       const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier <= 0x7FF)
                && (inMask <= 0x7FF)
                && ((inIdentifier & inMask) == inIdentifier) ;
@@ -589,6 +669,7 @@ bool ACANFD_FeatherM4CAN::StandardFilters::addClassic (const uint16_t inIdentifi
     filter |= (2U << 30) ; // Classic filter (page 1182)
     filter |= ((uint32_t (inAction) + 1) << 27) ; // Filter action (page 1182)
     mFilterArray.append (filter) ;
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }
@@ -601,9 +682,18 @@ static const uint32_t MAX_EXTENDED_IDENTIFIER = 0x1FFFFFFF ;
 
 //--------------------------------------------------------------------------------------------------
 
+bool ACANFD_FeatherM4CAN::ExtendedFilters::addSingle (const uint32_t inIdentifier,
+                                                      const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                      const ACANFDCallBackRoutine inCallBack) {
+  return addDual (inIdentifier, inIdentifier, inAction, inCallBack) ;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 bool ACANFD_FeatherM4CAN::ExtendedFilters::addDual (const uint32_t inIdentifier1,
                                                     const uint32_t inIdentifier2,
-                                                    const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                    const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                    const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier1 <= MAX_EXTENDED_IDENTIFIER)
                && (inIdentifier2 <= MAX_EXTENDED_IDENTIFIER) ;
   if (ok) {
@@ -613,22 +703,17 @@ bool ACANFD_FeatherM4CAN::ExtendedFilters::addDual (const uint32_t inIdentifier1
     filter = inIdentifier2 ;
     filter |= (1U << 30) ; // Dual filter (page 1182)
     mFilterArray.append (filter) ;
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }
 
 //--------------------------------------------------------------------------------------------------
 
-bool ACANFD_FeatherM4CAN::ExtendedFilters::addSingle (const uint32_t inIdentifier,
-                                                      const ACANFD_FeatherM4CAN_FilterAction inAction) {
-  return addDual (inIdentifier, inIdentifier, inAction) ;
-}
-
-//--------------------------------------------------------------------------------------------------
-
 bool ACANFD_FeatherM4CAN::ExtendedFilters::addRange (const uint32_t inIdentifier1,
                                                      const uint32_t inIdentifier2,
-                                                     const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                     const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                     const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier1 <= inIdentifier2)
                && (inIdentifier2 <= MAX_EXTENDED_IDENTIFIER) ;
   if (ok) {
@@ -637,6 +722,7 @@ bool ACANFD_FeatherM4CAN::ExtendedFilters::addRange (const uint32_t inIdentifier
     mFilterArray.append (filter) ;
     filter = inIdentifier2 ;
     mFilterArray.append (filter) ;  // Filter type is 0 (RANGE, page 1182)
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }
@@ -645,7 +731,8 @@ bool ACANFD_FeatherM4CAN::ExtendedFilters::addRange (const uint32_t inIdentifier
 
 bool ACANFD_FeatherM4CAN::ExtendedFilters::addClassic (const uint32_t inIdentifier,
                                                        const uint32_t inMask,
-                                                       const ACANFD_FeatherM4CAN_FilterAction inAction) {
+                                                       const ACANFD_FeatherM4CAN_FilterAction inAction,
+                                                       const ACANFDCallBackRoutine inCallBack) {
   const bool ok = (inIdentifier <= MAX_EXTENDED_IDENTIFIER)
                && (inMask <= MAX_EXTENDED_IDENTIFIER)
                && ((inIdentifier & inMask) == inIdentifier) ;
@@ -656,6 +743,7 @@ bool ACANFD_FeatherM4CAN::ExtendedFilters::addClassic (const uint32_t inIdentifi
     filter = inMask ;
     filter |= (2U << 30) ; // Classic filter (page 1182)
     mFilterArray.append (filter) ;
+    mCallBackArray.append (inCallBack) ;
   }
   return ok ;
 }

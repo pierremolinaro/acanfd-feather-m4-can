@@ -18,6 +18,9 @@ receiveFD0	KEYWORD2
 availableFD0	KEYWORD2
 receiveFD1	KEYWORD2
 availableFD1	KEYWORD2
+dispatchReceivedMessage	KEYWORD2
+dispatchReceivedMessageFIFO0	KEYWORD2
+dispatchReceivedMessageFIFO1	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)

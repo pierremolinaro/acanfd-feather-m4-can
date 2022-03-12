@@ -1,7 +1,7 @@
 // CAN1 external LoopBackDemo for Adafruit Feather M4 CAN Express
 // No external hardware required.
 // You can observe emitted CANFD frames on CANH / CANL pins.
-// This sketch is an example of extended filters.
+// This sketch is an example of standard and extended filters, with dispatch function.
 //-----------------------------------------------------------------
 
 #ifndef ARDUINO_FEATHER_M4_CAN
@@ -22,9 +22,68 @@
 //   can1.messageRamRequiredMinimumSize () for getting it.
 
 #define CAN0_MESSAGE_RAM_SIZE (0)
-#define CAN1_MESSAGE_RAM_SIZE (1916)
+#define CAN1_MESSAGE_RAM_SIZE (1920)
 
 #include <ACANFD_FeatherM4CAN.h>
+
+//-----------------------------------------------------------------
+
+static uint32_t gStandardSingleFilterMatchCount = 0 ;
+static uint32_t gStandardDualFilterMatchCount = 0 ;
+static uint32_t gStandardRangeFilterMatchCount = 0 ;
+static uint32_t gStandardClassicFilterMatchCount = 0 ;
+static uint32_t gExtendedSingleFilterMatchCount = 0 ;
+static uint32_t gExtendedDualFilterMatchCount = 0 ;
+static uint32_t gExtendedRangeFilterMatchCount = 0 ;
+static uint32_t gExtendedClassicFilterMatchCount = 0 ;
+
+//-----------------------------------------------------------------
+
+static void callBackForStandardSingleFilter (const CANFDMessage & /* inMessage */) {
+  gStandardSingleFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForStandardDualFilter (const CANFDMessage & /* inMessage */) {
+  gStandardDualFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForStandardRangeFilter (const CANFDMessage & /* inMessage */) {
+  gStandardRangeFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForStandardClassicFilter (const CANFDMessage & /* inMessage */) {
+  gStandardClassicFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForExtendedSingleFilter (const CANFDMessage & /* inMessage */) {
+  gExtendedSingleFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForExtendedDualFilter (const CANFDMessage & /* inMessage */) {
+  gExtendedDualFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForExtendedRangeFilter (const CANFDMessage & /* inMessage */) {
+  gExtendedRangeFilterMatchCount += 1 ;
+}
+
+//-----------------------------------------------------------------
+
+static void callBackForExtendedClassicFilter (const CANFDMessage & /* inMessage */) {
+  gExtendedClassicFilterMatchCount += 1 ;
+}
 
 //-----------------------------------------------------------------
 
@@ -71,15 +130,26 @@ void setup () {
 
   settings.mModuleMode = ACANFD_FeatherM4CAN_Settings::EXTERNAL_LOOP_BACK ;
 
+
+  ACANFD_FeatherM4CAN::StandardFilters standardFilters ;
+//--- Add classic filter: identifier and mask (8 matching identifiers)
+  standardFilters.addClassic (0x405, 0x7D5, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForStandardClassicFilter) ;
+//--- Add range filter: low bound, high bound (36 matching identifiers)
+  standardFilters.addRange (0x100, 0x123, ACANFD_FeatherM4CAN_FilterAction::FIFO1, callBackForStandardRangeFilter) ;
+//--- Add dual filter: identifier1, identifier2 (2 matching identifiers)
+  standardFilters.addDual (0x033, 0x44, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForStandardDualFilter) ;
+//--- Add single filter: identifier (1 matching identifier)
+  standardFilters.addSingle (0x055, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForStandardSingleFilter) ;
+
   ACANFD_FeatherM4CAN::ExtendedFilters extendedFilters ;
 //--- Add single filter: identifier (1 matching identifier)
-  extendedFilters.addSingle (0x5555, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+  extendedFilters.addSingle (0x5555, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForExtendedSingleFilter) ;
 //--- Add dual filter: identifier1, identifier2 (2 matching identifiers)
-  extendedFilters.addDual (0x3333, 0x4444, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+  extendedFilters.addDual (0x3333, 0x4444, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForExtendedDualFilter) ;
 //--- Add range filter: low bound, high bound (565 matching identifiers)
-  extendedFilters.addRange (0x1000, 0x1234, ACANFD_FeatherM4CAN_FilterAction::FIFO1) ;
+  extendedFilters.addRange (0x1000, 0x1234, ACANFD_FeatherM4CAN_FilterAction::FIFO1, callBackForExtendedRangeFilter) ;
 //--- Add classic filter: identifier and mask (32 matching identifiers)
-  extendedFilters.addClassic (0x6789, 0x1FFF67BD, ACANFD_FeatherM4CAN_FilterAction::FIFO0) ;
+  extendedFilters.addClassic (0x6789, 0x1FFF67BD, ACANFD_FeatherM4CAN_FilterAction::FIFO0, callBackForExtendedClassicFilter) ;
 
 //--- Reject extended frames that do not match any filter
   settings.mNonMatchingExtendedFrameReception = ACANFD_FeatherM4CAN_FilterAction::REJECT ;
@@ -90,7 +160,7 @@ void setup () {
   settings.mHardwareRxFIFO1Size = 10 ; // By default, 0
   settings.mDriverReceiveFIFO1Size = 10 ; // By default, 0
 
-  const uint32_t errorCode = can1.beginFD (settings, extendedFilters) ;
+  const uint32_t errorCode = can1.beginFD (settings, standardFilters, extendedFilters) ;
 
   Serial.print ("Message RAM required minimum size: ") ;
   Serial.print (can1.messageRamRequiredMinimumSize ()) ;
@@ -109,9 +179,8 @@ void setup () {
 static const uint32_t PERIOD = 1000 ;
 static uint32_t gBlinkDate = PERIOD ;
 static uint32_t gSentIdentifier = 0 ;
-static uint32_t gReceiveCountFIFO0 = 0 ;
-static uint32_t gReceiveCountFIFO1 = 0 ;
 static bool gOk = true ;
+static bool gSendExtended = false ;
 
 //-----------------------------------------------------------------
 
@@ -129,7 +198,25 @@ static void printCount (const uint32_t inActualCount, const uint32_t inExpectedC
 //-----------------------------------------------------------------
 
 void loop () {
-  if (gOk && (gSentIdentifier <= 0x1FFFFFFF) && can1.sendBufferNotFullForIndex (0)) {
+//--- Send standard frame ?
+  if (!gSendExtended && gOk && (gSentIdentifier <= 0x7FF) && can1.sendBufferNotFullForIndex (0)) {
+    CANFDMessage frame ;
+    frame.id = gSentIdentifier ;
+    gSentIdentifier += 1 ;
+    const uint32_t sendStatus = can1.tryToSendReturnStatusFD (frame) ;
+    if (sendStatus != 0) {
+      gOk = false ;
+      Serial.print ("Sent error 0x") ;
+      Serial.println (sendStatus) ;
+    } 
+  }
+//--- All standard frame have been sent ?
+  if (!gSendExtended && gOk && (gSentIdentifier > 0x7FF)) {
+    gSendExtended = true ;
+    gSentIdentifier = 0 ;
+  }
+//--- Send extended frame ?
+  if (gSendExtended && gOk && (gSentIdentifier <= 0x1FFFFFFF) && can1.sendBufferNotFullForIndex (0)) {
     CANFDMessage frame ;
     frame.id = gSentIdentifier ;
     frame.ext = true ;
@@ -142,21 +229,21 @@ void loop () {
     } 
   }
 //--- Receive frame
-  CANFDMessage frame ;
-  if (gOk && can1.receiveFD0 (frame)) {
-    gReceiveCountFIFO0 += 1 ;
-  }
-  if (gOk && can1.receiveFD1 (frame)) {
-    gReceiveCountFIFO1 += 1 ;
-  }
+  can1.dispatchReceivedMessage () ;
 //--- Blink led and display
   if (gBlinkDate <= millis ()) {
     gBlinkDate += PERIOD ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
     Serial.print ("Sent: ") ;
     Serial.print (gSentIdentifier) ;
-    printCount (gReceiveCountFIFO0, 35) ;
-    printCount (gReceiveCountFIFO1, 565) ;
+    printCount (gStandardSingleFilterMatchCount, 1) ;
+    printCount (gStandardDualFilterMatchCount, 2) ;
+    printCount (gStandardRangeFilterMatchCount, 36) ;
+    printCount (gStandardClassicFilterMatchCount, 8) ;
+    printCount (gExtendedSingleFilterMatchCount, 1) ;
+    printCount (gExtendedDualFilterMatchCount, 2) ;
+    printCount (gExtendedRangeFilterMatchCount, 565) ;
+    printCount (gExtendedClassicFilterMatchCount, 32) ;
     Serial.println () ;
   }
 }

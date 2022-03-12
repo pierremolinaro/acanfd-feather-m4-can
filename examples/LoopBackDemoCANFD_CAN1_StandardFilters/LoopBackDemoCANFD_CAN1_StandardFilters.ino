@@ -104,6 +104,19 @@ void setup () {
 
 //-----------------------------------------------------------------
 
+static void printCount (const uint32_t inActualCount, const uint32_t inExpectedCount) {
+  Serial.print (", ") ;
+  if (inActualCount == inExpectedCount) {
+    Serial.print ("ok") ;
+  }else{
+    Serial.print (inActualCount) ;
+    Serial.print ("/") ;
+    Serial.print (inExpectedCount) ;
+  }
+}
+
+//-----------------------------------------------------------------
+
 static const uint32_t PERIOD = 1000 ;
 static uint32_t gBlinkDate = PERIOD ;
 static uint32_t gSentIdentifier = 0 ;
@@ -137,10 +150,11 @@ void loop () {
   if (gBlinkDate <= millis ()) {
     gBlinkDate += PERIOD ;
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
-    Serial.print ("Received FIFO0: ") ;
-    Serial.print (gReceiveCountFIFO0) ;
-    Serial.print (", FIFO1: ") ;
-    Serial.println (gReceiveCountFIFO1) ;
+    Serial.print ("Sent: ") ;
+    Serial.print (gSentIdentifier) ;
+    printCount (gReceiveCountFIFO0, 11) ;
+    printCount (gReceiveCountFIFO1, 36) ;
+    Serial.println () ;
   }
 }
 
