@@ -215,6 +215,9 @@ class ACANFD_FeatherM4CAN {
   public: inline uint32_t transmitFIFOSize (void) const { return mDriverTransmitFIFO.size () ; }
   public: inline uint32_t transmitFIFOCount (void) const { return mDriverTransmitFIFO.count () ; }
   public: inline uint32_t transmitFIFOPeakCount (void) const { return mDriverTransmitFIFO.peakCount () ; }
+  public: inline ACANFD_FeatherM4CAN_Settings::Payload hardwareTxBufferPayload (void) const {
+    return mHardwareTxBufferPayload ;
+  }
 
 //--- Receiving messages
   public: bool availableFD0 (void) ;
@@ -234,13 +237,19 @@ class ACANFD_FeatherM4CAN {
   public: uint32_t driverReceiveFIFO0Count (void) { return mDriverReceiveFIFO0.count () ; }
   public: uint32_t driverReceiveFIFO0PeakCount (void) { return mDriverReceiveFIFO0.peakCount () ; }
   public: void resetDriverReceiveFIFO0PeakCount (void) { mDriverReceiveFIFO0.resetPeakCount () ; }
+  public: inline ACANFD_FeatherM4CAN_Settings::Payload hardwareRxFIFO0Payload (void) const {
+    return mHardwareRxFIFO0Payload ;
+  }
 
-//--- Driver receive FIFO 0
+//--- Driver receive FIFO 1
   private: ACANFD_FeatherM4CAN_FIFO mDriverReceiveFIFO1 ;
   public: uint32_t driverReceiveFIFO1Size (void) { return mDriverReceiveFIFO1.size () ; }
   public: uint32_t driverReceiveFIFO1Count (void) { return mDriverReceiveFIFO1.count () ; }
   public: uint32_t driverReceiveFIFO1PeakCount (void) { return mDriverReceiveFIFO1.peakCount () ; }
   public: void resetDriverReceiveFIFO1PeakCount (void) { mDriverReceiveFIFO1.resetPeakCount () ; }
+  public: inline ACANFD_FeatherM4CAN_Settings::Payload hardwareRxFIFO1Payload (void) const {
+    return mHardwareRxFIFO1Payload ;
+  }
 
 //--- Private properties
   private: Can * mModulePtr ;

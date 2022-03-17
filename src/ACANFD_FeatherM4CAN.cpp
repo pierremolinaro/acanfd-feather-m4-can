@@ -471,6 +471,9 @@ void ACANFD_FeatherM4CAN::writeTxBuffer (const CANFDMessage & inMessage, const u
   }
   txBufferPtr [1] = uint32_t (lengthCode) << 16 ;
 //---
+  const uint32_t lg = ACANFD_FeatherM4CAN_Settings::frameDataByteCountForPayload (mHardwareTxBufferPayload) ;
+  const uint32_t sentCount = (lg < inMessage.len) ? lg : inMessage.len ;
+//---
   switch (inMessage.type) {
   case CANFDMessage::CAN_REMOTE :
     txBufferPtr [0] |= 1 << 29 ; // Set RTR bit
@@ -481,7 +484,7 @@ void ACANFD_FeatherM4CAN::writeTxBuffer (const CANFDMessage & inMessage, const u
     break ;
   case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
     { txBufferPtr [1] |= 1 << 21 ; // Set FDF bit
-      const uint32_t wc = (inMessage.len + 3) / 4 ;
+      const uint32_t wc = (sentCount + 3) / 4 ;
       for (uint32_t i=0 ; i<wc ; i++) {
         txBufferPtr [i+2] = inMessage.data32 [i] ;
       }
@@ -489,7 +492,7 @@ void ACANFD_FeatherM4CAN::writeTxBuffer (const CANFDMessage & inMessage, const u
     break ;
   case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
     { txBufferPtr [1] |= (1 << 21) | (1 << 20) ; // Set FDF and BRS bits
-      const uint32_t wc = (inMessage.len + 3) / 4 ;
+      const uint32_t wc = (sentCount + 3) / 4 ;
       for (uint32_t i=0 ; i<wc ; i++) {
         txBufferPtr [i+2] = inMessage.data32 [i] ;
       }
@@ -505,8 +508,9 @@ void ACANFD_FeatherM4CAN::writeTxBuffer (const CANFDMessage & inMessage, const u
 //--------------------------------------------------------------------------------------------------
 
 static void getMessageFrom (uint32_t * inMessageRamAddress,
-                            const ACANFD_FeatherM4CAN_Settings::Payload /* inPayLoad */,
+                            const ACANFD_FeatherM4CAN_Settings::Payload inPayLoad,
                             CANFDMessage & outMessage) {
+  const uint32_t lg = ACANFD_FeatherM4CAN_Settings::frameDataByteCountForPayload (inPayLoad) ;
   const uint32_t w0 = inMessageRamAddress [0] ;
   outMessage.id = w0 & 0x1FFFFFFF ;
   const bool remote = (w0 & (1 << 29)) != 0 ;
@@ -537,9 +541,13 @@ static void getMessageFrom (uint32_t * inMessageRamAddress,
   }
 //--- Get data
   if (outMessage.type != CANFDMessage::CAN_REMOTE) {
-    const uint32_t wc = (outMessage.len + 3) / 4 ;
+    const uint32_t receiveByteCount = (lg < outMessage.len) ? lg : outMessage.len ;
+    const uint32_t wc = (receiveByteCount + 3) / 4 ;
     for (uint32_t i=0 ; i<wc ; i++) {
       outMessage.data32 [i] = inMessageRamAddress [i+2] ;
+    }
+    for (uint32_t i=receiveByteCount ; i<outMessage.len ; i++) {
+      outMessage.data [i] = 0xCC ;
     }
   }
 }

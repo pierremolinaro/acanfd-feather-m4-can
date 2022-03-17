@@ -51,6 +51,12 @@ class ACANFD_FeatherM4CAN_Settings {
   }
 
 //··································································································
+
+  public: static uint32_t frameDataByteCountForPayload (const Payload inPayload) {
+    return (wordCountForPayload (inPayload) - 2) * 4 ;
+  }
+
+//··································································································
 //    Constructor for a given baud rate
 //··································································································
 
