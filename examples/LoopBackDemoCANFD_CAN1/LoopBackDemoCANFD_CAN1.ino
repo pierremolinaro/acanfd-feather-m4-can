@@ -35,7 +35,7 @@ void setup () {
     digitalWrite (LED_BUILTIN, !digitalRead (LED_BUILTIN)) ;
   }
   Serial.println ("CAN1 CANFD loopback test") ;
-  ACANFD_FeatherM4CAN_Settings settings (1000 * 1000, DataBitRateFactor::x2) ;
+  ACANFD_FeatherM4CAN_Settings settings (500 * 1000, DataBitRateFactor::x4) ;
 
   Serial.print ("Bit Rate prescaler: ") ;
   Serial.println (settings.mBitRatePrescaler) ;
@@ -138,10 +138,31 @@ void loop () {
       if (sendStatus == 0) {
         gSentCount += 1 ;
         Serial.print ("Sent ") ;
-        Serial.println (gSentCount) ;
+        Serial.print (gSentCount) ;
+        Serial.print (", idf 0x") ;
+        Serial.print (gSentFrame.id, HEX) ;
+        Serial.print (", type ") ;
+        Serial.print (gSentFrame.type) ;
+        Serial.print (" (") ;
+        switch (gSentFrame.type) {
+        case CANFDMessage::CAN_REMOTE :
+          Serial.print ("remote") ;
+          break ;
+        case CANFDMessage::CAN_DATA :
+          Serial.print ("CAN 2.0B data") ;
+          break ;
+        case CANFDMessage::CANFD_NO_BIT_RATE_SWITCH :
+          Serial.print ("CANFD, no BRS") ;
+          break ;
+        case CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH :
+          Serial.print ("CANFD, BRS") ;
+          break ;
+        }
+        Serial.print ("), length ") ;
+        Serial.println (gSentFrame.len) ;
       }else{
         Serial.print ("Sent error 0x") ;
-        Serial.println (sendStatus) ;
+        Serial.println (gSentFrame.type) ;
       }
     }
   }

@@ -90,6 +90,9 @@ uint32_t ACANFD_FeatherM4CAN::beginFD (const ACANFD_FeatherM4CAN_Settings & inSe
     mModulePtr->TEST.reg = CAN_TEST_LBCK ;
     cccr |= CAN_CCCR_TEST ;
     break ;
+  case ACANFD_FeatherM4CAN_Settings::BUS_MONITORING :
+    cccr |= CAN_CCCR_MON ;
+    break ;
   }
   if (!inSettings.mEnableRetransmission) {
     cccr |= CAN_CCCR_DAR ; // Page 1123

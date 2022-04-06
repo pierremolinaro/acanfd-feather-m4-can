@@ -28,6 +28,7 @@ class ACANFD_FeatherM4CAN_Settings {
     NORMAL_FD,
     INTERNAL_LOOP_BACK,
     EXTERNAL_LOOP_BACK,
+    BUS_MONITORING
   } ModuleMode ;
 
 //··································································································
@@ -62,6 +63,12 @@ class ACANFD_FeatherM4CAN_Settings {
 
   public: ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
                                         const DataBitRateFactor inDataBitRateFactor,
+                                        const uint32_t inTolerancePPM = 1000) ;
+
+  public: ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
+                                        const uint32_t inDesiredArbitrationSamplePoint,
+                                        const DataBitRateFactor inDataBitRateFactor,
+                                        const uint32_t inDesiredDataSamplePoint,
                                         const uint32_t inTolerancePPM = 1000) ;
 
 //··································································································

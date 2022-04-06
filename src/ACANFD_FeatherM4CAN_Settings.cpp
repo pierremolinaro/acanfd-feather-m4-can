@@ -39,7 +39,6 @@ static const uint32_t MAX_ARBITRATION_PS2 = 128 ;
 
 static const uint32_t MAX_ARBITRATION_SJW = MAX_ARBITRATION_PS2 ;
 
-//static const uint32_t MIN_ARBITRATION_TQ_COUNT = 1 + MIN_ARBITRATION_PS1 + MIN_ARBITRATION_PS2 ;
 static const uint32_t MAX_ARBITRATION_TQ_COUNT = 1 + MAX_ARBITRATION_PS1 + MAX_ARBITRATION_PS2 ;
 
 //--------------------------------------------------------------------------------------------------
@@ -48,11 +47,21 @@ static const uint32_t CAN_ROOT_CLOCK_FREQUENCY = 48 * 1000 * 1000 ;
 static const uint32_t MAX_BRP = 32 ;
 
 //--------------------------------------------------------------------------------------------------
-//    CONSTRUCTOR FOR CANFD
+//    CONSTRUCTORS
 //--------------------------------------------------------------------------------------------------
 
 ACANFD_FeatherM4CAN_Settings::ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
                                                             const DataBitRateFactor inDataBitRateFactor,
+                                                            const uint32_t inTolerancePPM) :
+ACANFD_FeatherM4CAN_Settings (inDesiredArbitrationBitRate, 75, inDataBitRateFactor, 75, inTolerancePPM) {
+}
+
+//--------------------------------------------------------------------------------------------------
+
+ACANFD_FeatherM4CAN_Settings::ACANFD_FeatherM4CAN_Settings (const uint32_t inDesiredArbitrationBitRate,
+                                                            const uint32_t inDesiredArbitrationSamplePoint,
+                                                            const DataBitRateFactor inDataBitRateFactor,
+                                                            const uint32_t inDesiredDataSamplePoint,
                                                             const uint32_t inTolerancePPM) :
 mDesiredArbitrationBitRate (inDesiredArbitrationBitRate),
 mDataBitRateFactor (inDataBitRateFactor) {
@@ -89,23 +98,28 @@ mDataBitRateFactor (inDataBitRateFactor) {
 //-------------------------- Set the BRP
   mBitRatePrescaler = uint8_t (bestBRP) ;
 //-------------------------- Set Data segment lengthes
-//--- Compute PS2
-  const uint32_t dataPS2 = (9 + 7 * bestDataTQCount) / 22 ; // Always 2 <= PS2 <= 16
-  mDataPhaseSegment2 = uint8_t (dataPS2) ;
-//--- Set PS1 to half of remaining TQCount
-  const uint32_t dataPS1 = bestDataTQCount - dataPS2 - 1 /* Sync Seg */ ; // Always 1 <= PS1 <= 32
+//--- Compute PS1
+  uint32_t dataPS1 = (inDesiredDataSamplePoint * bestDataTQCount) / 100 - 1 ;
+  if (dataPS1 > MAX_DATA_PS1) {
+    dataPS1 = MAX_DATA_PS1 ; // Always 1 <= PS1 <= 32
+  }
   mDataPhaseSegment1 = uint8_t (dataPS1) ;
+//--- Set PS2 to remaining TQCount
+  mDataPhaseSegment2 = uint8_t (bestDataTQCount - dataPS1 - 1) ;
 //--- Set RJW to PS2
   mDataSJW = mDataPhaseSegment2 ;
 //-------------------------- Set Arbitration segment lengthes
   const uint32_t bestArbitrationTQCount = bestDataTQCount * uint32_t (inDataBitRateFactor) ;
-//--- Compute PS2
-  const uint32_t arbitrationPS2 = (bestArbitrationTQCount - 1) / 3 ; // Always 2 <= PS2 <= 128
-  mArbitrationPhaseSegment2 = uint8_t (arbitrationPS2) ;
-//--- Compute SJW
+//--- Compute PS1
+  uint32_t arbitrationPS1 = inDesiredArbitrationSamplePoint * bestArbitrationTQCount / 100 - 1 ;
+  if (arbitrationPS1 > MAX_ARBITRATION_PS1) {
+    arbitrationPS1 = MAX_ARBITRATION_PS1 ; // Always 1 <= PS1 <= 256
+  }
+  mArbitrationPhaseSegment1 = uint16_t (arbitrationPS1) ;
+//--- Set PS2 to remaining TQCount
+  mArbitrationPhaseSegment2 = uint8_t (bestArbitrationTQCount - arbitrationPS1 - 1) ;
+//--- Set RJW to PS2
   mArbitrationSJW = mArbitrationPhaseSegment2 ;
-//--- Compute the remaining number of TQ once PS2 and SyncSeg are removed
-  mArbitrationPhaseSegment1 = bestArbitrationTQCount - arbitrationPS2 - 1 /* Sync Seg */ ;
 //--- Triple sampling ?
   mTripleSampling = (mDesiredArbitrationBitRate <= 125000) && (mArbitrationPhaseSegment1 >= 2) ;
 //--- Final check of the configuration
@@ -166,7 +180,7 @@ uint32_t ACANFD_FeatherM4CAN_Settings::arbitrationSamplePointFromBitStart (void)
 
 uint32_t ACANFD_FeatherM4CAN_Settings::dataSamplePointFromBitStart (void) const {
   const uint32_t TQCount = 1 /* Sync Seg */ + mDataPhaseSegment1 + mDataPhaseSegment2 ;
-  const uint32_t samplePoint = 1 /* Sync Seg */ + mDataPhaseSegment1 - mTripleSampling ;
+  const uint32_t samplePoint = 1 /* Sync Seg */ + mDataPhaseSegment1 ;
   const uint32_t partPerCent = 100 ;
   return (samplePoint * partPerCent) / TQCount ;
 }
